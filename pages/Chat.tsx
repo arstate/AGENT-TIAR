@@ -6,7 +6,7 @@ import { Agent, GeminiModel, KnowledgeItem, AppSettings, ChatMessage, ChatSessio
 
 // --- HELPER: Image Compression ---
 // Maintains 100% resolution (width/height) for AI readability of text.
-// Reduces quality to 0.6 (JPEG) to save storage space in Realtime Database.
+// Uses WebP format at 90% quality for excellent quality-to-size ratio (better than JPEG, widely supported).
 const compressImage = async (file: File): Promise<File> => {
     if (!file.type.startsWith('image/')) return file;
 
@@ -29,20 +29,21 @@ const compressImage = async (file: File): Promise<File> => {
             // Draw image exactly as is
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             
-            // Compress to JPEG at 60% quality
+            // Compress to WebP at 90% quality
+            // WebP is more efficient than JPEG and widely supported in modern browsers
             canvas.toBlob((blob) => {
                 URL.revokeObjectURL(url);
                 if (blob) {
-                    // Create new File with same name but jpeg type
-                    const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
-                        type: 'image/jpeg',
+                    // Create new File with same name but webp extension
+                    const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".webp", {
+                        type: 'image/webp',
                         lastModified: Date.now(),
                     });
                     resolve(compressedFile);
                 } else {
                     resolve(file);
                 }
-            }, 'image/jpeg', 0.6); 
+            }, 'image/webp', 0.90); 
         };
         
         img.onerror = (err) => {
@@ -56,7 +57,7 @@ const compressImage = async (file: File): Promise<File> => {
 
 // --- COMPONENT: BlobImage ---
 // Converts heavy Base64 string to lightweight Blob URL for rendering
-const BlobImage = ({ base64Src }: { base64Src: string }) => {
+const BlobImage = ({ base64Src, onPreview }: { base64Src: string, onPreview: (url: string) => void }) => {
     const [blobUrl, setBlobUrl] = useState<string | null>(null);
 
     useEffect(() => {
@@ -95,7 +96,10 @@ const BlobImage = ({ base64Src }: { base64Src: string }) => {
     }
 
     return (
-        <a href={blobUrl} target="_blank" rel="noopener noreferrer" className="block relative group cursor-zoom-in">
+        <div 
+            onClick={() => onPreview(blobUrl)} 
+            className="block relative group cursor-zoom-in"
+        >
             <img 
                 src={blobUrl} 
                 alt="attachment" 
@@ -103,9 +107,9 @@ const BlobImage = ({ base64Src }: { base64Src: string }) => {
                 loading="lazy"
             />
             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
-                <span className="bg-black/50 text-white text-xs px-2 py-1 rounded">Open Full</span>
+                <span className="bg-black/50 text-white text-xs px-2 py-1 rounded">View</span>
             </div>
-        </a>
+        </div>
     );
 };
 
@@ -130,6 +134,7 @@ const Chat: React.FC = () => {
 
   // UI State
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<string | null>(null); // For Modal
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -263,7 +268,8 @@ const Chat: React.FC = () => {
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
       // Handle image paste
       if (e.clipboardData.files.length > 0) {
-          const filesArray = Array.from(e.clipboardData.files).filter(file => file.type.startsWith('image/'));
+          // Fix: Explicitly type 'file' as File because Array.from might infer unknown[]
+          const filesArray = Array.from(e.clipboardData.files).filter((file: File) => file.type.startsWith('image/'));
           if (filesArray.length > 0) {
               e.preventDefault(); // Prevent pasting the binary name text
               setChatFiles(prev => [...prev, ...filesArray]);
@@ -303,7 +309,7 @@ const Chat: React.FC = () => {
     let filesForGemini: File[] = [];
 
     if (rawFilesToSend.length > 0) {
-        setCompressionStatus('Compressing images...');
+        setCompressionStatus('Enhancing images...');
         try {
             // 1. Compress files (Client side, reduces MB, keeps resolution)
             const compressedFilesPromise = rawFilesToSend.map(f => compressImage(f));
@@ -451,8 +457,31 @@ const Chat: React.FC = () => {
   const activeAgent = agents.find(a => a.id === selectedAgentId);
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-col md:flex-row gap-6">
+    <div className="h-[calc(100vh-140px)] flex flex-col md:flex-row gap-6 relative">
       
+      {/* --- IMAGE PREVIEW MODAL --- */}
+      {previewImage && (
+          <div 
+            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+            onClick={() => setPreviewImage(null)}
+          >
+              <button 
+                className="absolute top-4 right-4 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full p-2 transition-colors z-[101]"
+                onClick={() => setPreviewImage(null)}
+              >
+                  <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+              </button>
+              <img 
+                src={previewImage} 
+                alt="Full Preview" 
+                className="max-w-full max-h-[90vh] rounded-lg shadow-2xl object-contain"
+                onClick={(e) => e.stopPropagation()} // Prevent close when clicking image
+              />
+          </div>
+      )}
+
       {/* Sidebar: Agents & Sessions */}
       <div className="md:w-1/4 w-full bg-slate-800 rounded-xl border border-slate-700 overflow-hidden flex flex-col shadow-xl">
         <div className="p-4 bg-slate-700/50 border-b border-slate-700 flex items-center justify-between">
@@ -623,7 +652,7 @@ const Chat: React.FC = () => {
                             <div className="mb-2 flex flex-wrap gap-2">
                                 {msg.images.map((imgSrc, idx) => (
                                     <div key={idx}>
-                                        <BlobImage base64Src={imgSrc} />
+                                        <BlobImage base64Src={imgSrc} onPreview={setPreviewImage} />
                                     </div>
                                 ))}
                             </div>
