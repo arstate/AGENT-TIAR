@@ -27,18 +27,36 @@ export class GeminiService {
     this.apiKeys = apiKeys;
   }
 
-  private getClient(): GoogleGenAI {
-    if (this.apiKeys.length === 0) {
-      throw new Error("No API Keys configured.");
+  // Wrapper to execute API calls with retry logic across all available keys
+  private async executeWithRetry<T>(operation: (ai: GoogleGenAI) => Promise<T>): Promise<T> {
+    if (!this.apiKeys || this.apiKeys.length === 0) {
+      throw new Error("No API Keys configured. Please add them in Settings.");
     }
-    // Simple rotation: try next key if needed, or random
-    const key = this.apiKeys[this.currentKeyIndex % this.apiKeys.length];
-    // In a real app, we would process.env.API_KEY, but here we use user provided keys
-    return new GoogleGenAI({ apiKey: key });
-  }
 
-  private rotateKey() {
-    this.currentKeyIndex++;
+    let lastError: any;
+    
+    // Iterate through all keys starting from the current index
+    for (let i = 0; i < this.apiKeys.length; i++) {
+      const indexToCheck = (this.currentKeyIndex + i) % this.apiKeys.length;
+      const apiKey = this.apiKeys[indexToCheck];
+      
+      try {
+        const ai = new GoogleGenAI({ apiKey });
+        const result = await operation(ai);
+        
+        // If successful, update the sticky index to this working key
+        this.currentKeyIndex = indexToCheck;
+        return result;
+      } catch (error: any) {
+        console.warn(`Attempt failed with API Key ending in ...${apiKey.slice(-4)}:`, error.message);
+        lastError = error;
+        // Continue to the next iteration (next key)
+      }
+    }
+
+    // If we exit the loop, all keys failed
+    console.error("All API keys failed.");
+    throw lastError;
   }
 
   async analyzeContent(
@@ -46,30 +64,24 @@ export class GeminiService {
     prompt: string,
     files?: File[]
   ): Promise<string> {
-    try {
-      const ai = this.getClient();
-      
-      const parts: any[] = [{ text: prompt }];
+    // Prepare content parts outside the retry loop to avoid reprocessing
+    const parts: any[] = [{ text: prompt }];
 
-      if (files && files.length > 0) {
-        for (const file of files) {
-          const part = await fileToGenerativePart(file);
-          parts.push(part);
-        }
+    if (files && files.length > 0) {
+      for (const file of files) {
+        const part = await fileToGenerativePart(file);
+        parts.push(part);
       }
+    }
 
+    return this.executeWithRetry(async (ai) => {
       const response = await ai.models.generateContent({
         model: modelName,
         contents: { parts },
       });
 
       return response.text || "No analysis generated.";
-    } catch (error) {
-      console.error("Gemini API Error:", error);
-      // If error suggests quota limit, rotate and retry could be implemented here
-      this.rotateKey(); 
-      throw error;
-    }
+    });
   }
 
   async chatWithAgent(
@@ -79,10 +91,8 @@ export class GeminiService {
     history: { role: string; parts: { text: string }[] }[],
     newMessage: string
   ): Promise<string> {
-    try {
-      const ai = this.getClient();
-      
-      const systemInstruction = `
+    
+    const systemInstruction = `
         You are an AI Agent with the following role: ${agentRole}.
         
         Use the following learned knowledge to answer user queries if relevant:
@@ -94,8 +104,7 @@ export class GeminiService {
         Answer concisely and helpful, like a WhatsApp reply.
       `;
 
-      // We use generateContent for single turn with history context constructed manually 
-      // or use the chat API. Let's use Chat API for better history management.
+    return this.executeWithRetry(async (ai) => {
       const chat = ai.chats.create({
         model: modelName,
         config: {
@@ -106,11 +115,6 @@ export class GeminiService {
 
       const result = await chat.sendMessage({ message: newMessage });
       return result.text || "";
-
-    } catch (error) {
-      console.error("Chat Error:", error);
-      this.rotateKey();
-      throw error;
-    }
+    });
   }
 }
