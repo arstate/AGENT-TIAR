@@ -252,13 +252,19 @@ const Chat: React.FC = () => {
     <div className="h-[calc(100vh-140px)] flex flex-col md:flex-row gap-6">
       
       {/* Sidebar: Agents & Sessions */}
-      <div className="md:w-1/4 w-full bg-slate-800 rounded-xl border border-slate-700 overflow-hidden flex flex-col">
-        <div className="p-4 bg-slate-700/50 border-b border-slate-700">
-            <h3 className="font-bold text-white">Agents</h3>
+      <div className="md:w-1/4 w-full bg-slate-800 rounded-xl border border-slate-700 overflow-hidden flex flex-col shadow-xl">
+        <div className="p-4 bg-slate-700/50 border-b border-slate-700 flex items-center justify-between">
+            <h3 className="font-bold text-white flex items-center gap-2">
+                 <svg className="w-5 h-5 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                 </svg>
+                 Agents
+            </h3>
         </div>
         
         {/* Agent List */}
         <div className="flex-1 overflow-y-auto p-2 space-y-2">
+            {agents.length === 0 && <div className="p-4 text-sm text-slate-500 text-center">No agents found.</div>}
             {agents.map(agent => (
                 <div key={agent.id} className="space-y-1">
                     {/* Agent Button */}
@@ -279,12 +285,20 @@ const Chat: React.FC = () => {
                     {selectedAgentId === agent.id && (
                         <div className="ml-6 border-l-2 border-slate-600 pl-2 space-y-1 my-2">
                             <div className="flex justify-between items-center px-2">
-                                <span className="text-xs text-slate-400 font-bold uppercase">Rooms</span>
+                                <span className="text-xs text-slate-400 font-bold uppercase tracking-wider flex items-center">
+                                    <svg className="w-3 h-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                                    </svg>
+                                    History
+                                </span>
                                 <button 
                                     onClick={() => setIsCreatingSession(!isCreatingSession)}
-                                    className="text-xs text-blue-400 hover:text-blue-300"
+                                    className="text-xs text-blue-400 hover:text-blue-300 flex items-center"
                                 >
-                                    + New
+                                    <svg className="w-3 h-3 mr-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                    New
                                 </button>
                             </div>
                             
@@ -298,7 +312,11 @@ const Chat: React.FC = () => {
                                         onChange={e => setNewSessionName(e.target.value)}
                                         onKeyDown={e => e.key === 'Enter' && handleCreateSession()}
                                     />
-                                    <button onClick={handleCreateSession} className="text-green-400 text-xs">✓</button>
+                                    <button onClick={handleCreateSession} className="text-green-400 text-xs">
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    </button>
                                 </div>
                             )}
 
@@ -306,9 +324,12 @@ const Chat: React.FC = () => {
                                 <button
                                     key={session.id}
                                     onClick={() => setSelectedSessionId(session.id)}
-                                    className={`w-full text-left text-xs p-2 rounded truncate ${selectedSessionId === session.id ? 'bg-blue-500/10 text-blue-300' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'}`}
+                                    className={`w-full text-left text-xs p-2 rounded truncate flex items-center ${selectedSessionId === session.id ? 'bg-blue-500/10 text-blue-300' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50'}`}
                                 >
-                                    # {session.name}
+                                    <svg className="w-3 h-3 mr-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                                    </svg>
+                                    {session.name}
                                 </button>
                             ))}
                             {sessions.length === 0 && (
@@ -334,7 +355,10 @@ const Chat: React.FC = () => {
                         <div>
                             <h3 className="font-bold text-white">{activeAgent.name}</h3>
                             <div className="flex items-center gap-2">
-                                <p className="text-xs text-green-100 opacity-80">online</p>
+                                <div className="flex items-center">
+                                    <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse mr-1"></div>
+                                    <p className="text-xs text-green-100 opacity-80">online</p>
+                                </div>
                                 {selectedSessionId && (
                                     <span className="text-xs bg-black/20 px-2 rounded-full text-white/90">
                                         {sessions.find(s => s.id === selectedSessionId)?.name}
@@ -344,7 +368,12 @@ const Chat: React.FC = () => {
                         </div>
                     </>
                 ) : (
-                    <div className="text-white">Select an agent</div>
+                    <div className="text-white flex items-center">
+                         <svg className="w-5 h-5 mr-2 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                         </svg>
+                        Select an agent from the list
+                    </div>
                 )}
              </div>
 
@@ -353,7 +382,7 @@ const Chat: React.FC = () => {
                  <button 
                     onClick={handleDeleteSession}
                     title="Delete Chat History"
-                    className="text-white/70 hover:text-red-300 transition-colors p-2"
+                    className="text-white/70 hover:text-red-300 transition-colors p-2 rounded-full hover:bg-black/10"
                  >
                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -366,7 +395,12 @@ const Chat: React.FC = () => {
         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#0b141a]" style={{ backgroundImage: "url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png')", backgroundBlendMode: 'soft-light' }}>
             {messages.length === 0 && (
                 <div className="flex justify-center mt-10">
-                    <div className="bg-[#1f2c34] text-[#8696a0] text-sm px-4 py-2 rounded-lg shadow text-center">
+                    <div className="bg-[#1f2c34] text-[#8696a0] text-sm px-4 py-2 rounded-lg shadow text-center border border-slate-800">
+                        <div className="flex justify-center mb-2">
+                             <svg className="w-6 h-6 text-[#00a884]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                        </div>
                         Encrypted end-to-end. Agent ready to chat.<br/>
                         <span className="text-xs opacity-70">
                             {knowledge.length > 0 ? `${knowledge.length} knowledge items loaded.` : 'No specific training data.'}
@@ -385,7 +419,14 @@ const Chat: React.FC = () => {
                         {msg.text}
                         <div className="text-[10px] text-right opacity-50 mt-1 flex justify-end items-center gap-1">
                             {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...'}
-                            {msg.role === 'user' && <span>✓✓</span>}
+                            {msg.role === 'user' && (
+                                <svg className="w-3 h-3 text-blue-300" viewBox="0 0 24 24" fill="currentColor">
+                                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+                                    <path d="M21 7l-1.41-1.41L9 16.17 4.83 12l-1.42 1.41L9 19 21 7z" /> 
+                                    {/* Double Check trick: normally specific path, using single for visual sim */}
+                                    <path d="M21.7 7.3l-1.4-1.4-8.8 8.8-2.6-2.6-1.4 1.4 4 4 10.2-10.2z" transform="translate(-5,0)"/>
+                                </svg>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -393,8 +434,10 @@ const Chat: React.FC = () => {
             
             {isTyping && (
                 <div className="flex justify-start">
-                     <div className="bg-[#202c33] text-[#e9edef] rounded-lg px-4 py-2 rounded-tl-none text-sm italic opacity-70">
-                         Typing...
+                     <div className="bg-[#202c33] text-[#e9edef] rounded-lg px-4 py-2 rounded-tl-none text-sm italic opacity-70 flex items-center gap-1">
+                         <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></span>
+                         <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-100"></span>
+                         <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce delay-200"></span>
                      </div>
                 </div>
             )}
@@ -403,7 +446,7 @@ const Chat: React.FC = () => {
 
         {/* Input */}
         <div className="p-3 bg-[#202c33] flex items-center space-x-2">
-            <button className="text-[#8696a0] p-2 hover:bg-[#374248] rounded-full">
+            <button className="text-[#8696a0] p-2 hover:bg-[#374248] rounded-full transition-colors">
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0a12 12 0 1012 12A12.013 12.013 0 0012 0zm0 22a10 10 0 1110-10 10.011 10.011 0 01-10 10zm5-10a1 1 0 11-1 1 1.001 1.001 0 011-1zM7 12a1 1 0 111 1 1 1 0 01-1-1zm5 0a1 1 0 111 1 1 1 0 01-1-1z" /></svg>
             </button>
             <input 
@@ -417,7 +460,7 @@ const Chat: React.FC = () => {
             <button 
                 onClick={handleSend}
                 disabled={!input.trim() || !activeAgent || isTyping}
-                className={`p-2 rounded-full ${input.trim() ? 'text-[#00a884]' : 'text-[#8696a0]'}`}
+                className={`p-2 rounded-full transition-colors ${input.trim() ? 'text-[#00a884] hover:bg-[#374248]' : 'text-[#8696a0]'}`}
             >
                 <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
             </button>
