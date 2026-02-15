@@ -64,19 +64,28 @@ const Settings: React.FC = () => {
     <div className="space-y-8 animate-fade-in">
       <div className="border-b border-slate-700 pb-4">
         <h2 className="text-3xl font-bold text-white tracking-tight">System Configuration</h2>
-        <p className="text-slate-400 mt-2">Manage API keys and AI Model behavior (Synced to Database).</p>
+        <p className="text-slate-400 mt-2">Manage API keys and AI Model behavior.</p>
       </div>
 
       {/* API Keys Section */}
-      <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
+      <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl relative overflow-hidden">
+        {keys.length > 1 && (
+            <div className="absolute top-0 right-0 bg-green-500/10 text-green-400 text-xs font-bold px-3 py-1 rounded-bl-xl border-l border-b border-green-500/20 flex items-center">
+                <svg className="w-3 h-3 mr-1 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                Auto-Rotation Active
+            </div>
+        )}
+
         <h3 className="text-xl font-semibold mb-4 flex items-center text-white">
           <svg className="w-6 h-6 mr-2 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
           </svg>
-          API Keys (Rotation)
+          Rotating API Keys
         </h3>
         <p className="text-sm text-slate-400 mb-4">
-          Add multiple Gemini API keys. The system will rotate through them to handle rate limits automatically.
+          Add multiple Gemini API keys. The system will <strong>automatically rotate</strong> to the next key if a rate limit (429) is hit, ensuring uninterrupted service.
         </p>
 
         <div className="flex gap-2 mb-4">
@@ -85,7 +94,7 @@ const Settings: React.FC = () => {
             value={newKey}
             onChange={(e) => setNewKey(e.target.value)}
             placeholder="Paste Gemini API Key here (AIza...)"
-            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+            className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono"
           />
           <button
             onClick={addKey}
@@ -94,22 +103,25 @@ const Settings: React.FC = () => {
              <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
              </svg>
-             Add
+             Add Key
           </button>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2 max-h-60 overflow-y-auto pr-2">
           {keys.map((key, index) => (
-            <div key={index} className="flex items-center justify-between bg-slate-900 p-3 rounded-lg border border-slate-700/50 hover:border-slate-600 transition-colors">
-              <code className="text-green-400 text-sm font-mono flex items-center">
-                <svg className="w-4 h-4 mr-2 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                {key.substring(0, 8)}...{key.substring(key.length - 6)}
-              </code>
+            <div key={index} className="flex items-center justify-between bg-slate-900 p-3 rounded-lg border border-slate-700/50 hover:border-slate-600 transition-colors group">
+              <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-500 font-mono w-6">#{index + 1}</span>
+                  <code className="text-green-400 text-sm font-mono flex items-center">
+                    <svg className="w-4 h-4 mr-2 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    {key.substring(0, 8)}...{key.substring(key.length - 6)}
+                  </code>
+              </div>
               <button
                 onClick={() => removeKey(index)}
-                className="text-slate-500 hover:text-red-400 p-2 rounded-full hover:bg-red-500/10 transition-colors"
+                className="text-slate-500 hover:text-red-400 p-2 rounded-full hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
               >
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -118,7 +130,9 @@ const Settings: React.FC = () => {
             </div>
           ))}
           {keys.length === 0 && (
-            <div className="text-center p-6 bg-slate-900/50 rounded-lg border border-slate-700/50 border-dashed text-slate-500 italic">No API keys added yet.</div>
+            <div className="text-center p-6 bg-slate-900/50 rounded-lg border border-slate-700/50 border-dashed text-slate-500 italic">
+                No API keys added. The AI features will not work.
+            </div>
           )}
         </div>
       </div>
@@ -170,14 +184,14 @@ const Settings: React.FC = () => {
                 <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                Settings Saved!
+                Configuration Saved!
               </>
           ) : (
               <>
                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                  </svg>
-                 Save Configuration
+                 Save Settings
               </>
           )}
         </button>

@@ -1,5 +1,5 @@
 {
   "name": "AgenAI Master",
-  "description": "A powerful AI Agent platform with multi-modal learning (PDF, Images), Firebase Realtime Database integration, and rotating API key management.",
+  "description": "A powerful AI Agent platform with AI Analysis (PDF, Images), Knowledge Base, and Auto-Rotating API Key management.",
   "requestFramePermissions": []
 }
