@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { GeminiService } from '../services/geminiService';
 import { db } from '../services/firebase';
-import { ref, push, onValue, get, child } from 'firebase/database';
+import { ref, push, onValue, get, child, remove } from 'firebase/database';
 import { GeminiModel, KnowledgeItem, AppSettings, Agent } from '../types';
 
 const Knowledge: React.FC = () => {
@@ -140,6 +140,19 @@ const Knowledge: React.FC = () => {
     }
   };
 
+  const handleDeleteKnowledge = async (knowledgeId: string) => {
+    if (!selectedAgentId) return;
+    
+    if (window.confirm("Are you sure you want to delete this learned data? The agent will forget this information.")) {
+        try {
+            await remove(ref(db, `knowledge/${selectedAgentId}/${knowledgeId}`));
+        } catch (error) {
+            console.error("Error deleting knowledge:", error);
+            alert("Failed to delete data.");
+        }
+    }
+  };
+
   const currentAgent = agents.find(a => a.id === selectedAgentId);
 
   return (
@@ -270,16 +283,27 @@ const Knowledge: React.FC = () => {
                     </div>
                 ) : (
                     knowledgeList.map(item => (
-                        <div key={item.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700">
+                        <div key={item.id} className="bg-slate-800 p-4 rounded-lg border border-slate-700 group hover:border-slate-500 transition-colors relative">
                             <div className="flex justify-between items-start mb-2">
                                 <span className={`text-xs px-2 py-1 rounded font-bold uppercase ${item.type === 'file' ? 'bg-purple-900 text-purple-200' : 'bg-blue-900 text-blue-200'}`}>
                                     {item.type}
                                 </span>
-                                <span className="text-xs text-slate-500">
-                                    {new Date(item.timestamp).toLocaleString()}
-                                </span>
+                                <div className="flex items-center space-x-3">
+                                    <span className="text-xs text-slate-500">
+                                        {new Date(item.timestamp).toLocaleDateString()}
+                                    </span>
+                                    <button 
+                                        onClick={() => handleDeleteKnowledge(item.id)}
+                                        title="Delete Data"
+                                        className="text-slate-600 hover:text-red-500 transition-colors"
+                                    >
+                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                        </svg>
+                                    </button>
+                                </div>
                             </div>
-                            <h4 className="font-semibold text-slate-200 mb-1">{item.originalName || 'Text Snippet'}</h4>
+                            <h4 className="font-semibold text-slate-200 mb-1 pr-6">{item.originalName || 'Text Snippet'}</h4>
                             <p className="text-sm text-slate-400 line-clamp-4 bg-slate-900/50 p-2 rounded">
                                 {item.contentSummary}
                             </p>

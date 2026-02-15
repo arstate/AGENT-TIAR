@@ -21,6 +21,9 @@ const Chat: React.FC = () => {
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
 
+  // UI State
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // 1. Load Agents on Mount
@@ -239,6 +242,31 @@ const Chat: React.FC = () => {
     }
   };
 
+  // Helper to remove strange Markdown symbols for cleaner display
+  const formatMessageText = (text: string) => {
+    if (!text) return '';
+    return text
+      // Replace list bullets (* or -) with a clean dot
+      .replace(/^\s*[\*\-]\s+/gm, '• ')
+      // Remove bold markers (**)
+      .replace(/\*\*/g, '')
+      // Remove italic markers (__)
+      .replace(/__/g, '')
+      // Remove header hashes (#)
+      .replace(/^\s*#+\s*/gm, '')
+      // Remove code backticks (`)
+      .replace(/`/g, '');
+  };
+
+  // Function to handle copying text
+  const handleCopy = (text: string, id: string) => {
+    const cleanText = formatMessageText(text);
+    navigator.clipboard.writeText(cleanText).then(() => {
+        setCopiedId(id);
+        setTimeout(() => setCopiedId(null), 2000);
+    });
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
       if(e.key === 'Enter' && !e.shiftKey) {
           e.preventDefault();
@@ -411,14 +439,36 @@ const Chat: React.FC = () => {
             
             {messages.map((msg, i) => (
                 <div key={msg.id || i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] rounded-lg px-4 py-2 shadow-sm text-sm whitespace-pre-wrap ${
+                    <div className={`max-w-[80%] rounded-lg px-4 py-2 shadow-sm text-sm whitespace-pre-wrap group relative ${
                         msg.role === 'user' 
                         ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-none' 
                         : 'bg-[#202c33] text-[#e9edef] rounded-tl-none'
                     }`}>
-                        {msg.text}
-                        <div className="text-[10px] text-right opacity-50 mt-1 flex justify-end items-center gap-1">
-                            {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...'}
+                        {formatMessageText(msg.text)}
+                        <div className="text-[10px] text-right opacity-50 mt-1 flex justify-end items-center gap-2">
+                            {/* Copy Button for Model messages */}
+                            {msg.role === 'model' && (
+                                <button 
+                                    onClick={() => handleCopy(msg.text, msg.id || i.toString())}
+                                    className="hover:text-white transition-colors p-1 rounded"
+                                    title="Copy text"
+                                >
+                                    {copiedId === (msg.id || i.toString()) ? (
+                                        <svg className="w-3 h-3 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                        </svg>
+                                    )}
+                                </button>
+                            )}
+
+                            <span>
+                                {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...'}
+                            </span>
+                            
                             {msg.role === 'user' && (
                                 <svg className="w-3 h-3 text-blue-300" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
