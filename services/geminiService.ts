@@ -88,8 +88,9 @@ export class GeminiService {
     modelName: GeminiModel,
     agentRole: string,
     knowledgeContext: string,
-    history: { role: string; parts: { text: string }[] }[],
-    newMessage: string
+    history: { role: string; parts: any[] }[],
+    newMessage: string,
+    files?: File[]
   ): Promise<string> {
     
     const systemInstruction = `
@@ -104,6 +105,16 @@ export class GeminiService {
         Answer concisely and helpful, like a WhatsApp reply.
       `;
 
+    // Prepare current message parts (text + images)
+    const currentParts: any[] = [{ text: newMessage }];
+    
+    if (files && files.length > 0) {
+        for (const file of files) {
+            const part = await fileToGenerativePart(file);
+            currentParts.push(part);
+        }
+    }
+
     return this.executeWithRetry(async (ai) => {
       const chat = ai.chats.create({
         model: modelName,
@@ -113,7 +124,7 @@ export class GeminiService {
         history: history
       });
 
-      const result = await chat.sendMessage({ message: newMessage });
+      const result = await chat.sendMessage(currentParts);
       return result.text || "";
     });
   }

@@ -35,6 +35,7 @@ export interface ChatMessage {
   id?: string;
   role: 'user' | 'model';
   text: string;
+  images?: string[]; // Base64 strings of attached images
   timestamp: number;
 }
 

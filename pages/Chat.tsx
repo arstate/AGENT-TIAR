@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/firebase';
 import { ref, onValue, get, child, push, set, remove, serverTimestamp } from 'firebase/database';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService, fileToGenerativePart } from '../services/geminiService';
 import { Agent, GeminiModel, KnowledgeItem, AppSettings, ChatMessage, ChatSession } from '../types';
 
 const Chat: React.FC = () => {
@@ -17,6 +17,7 @@ const Chat: React.FC = () => {
   // Chat State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
+  const [chatFiles, setChatFiles] = useState<File[]>([]); // New state for images
   const [isTyping, setIsTyping] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
@@ -25,6 +26,7 @@ const Chat: React.FC = () => {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 1. Load Agents on Mount
   useEffect(() => {
@@ -117,7 +119,7 @@ const Chat: React.FC = () => {
   // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping]);
+  }, [messages, isTyping, chatFiles]);
 
 
   // Actions
@@ -141,8 +143,22 @@ const Chat: React.FC = () => {
       }
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files) {
+          setChatFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+      }
+      // Reset input so same file can be selected again if needed
+      if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+      }
+  };
+
+  const handleRemoveFile = (index: number) => {
+      setChatFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
   const handleSend = async () => {
-    if (!input.trim() || !selectedAgentId) return;
+    if ((!input.trim() && chatFiles.length === 0) || !selectedAgentId) return;
 
     // Use current session or create a default one if none exists
     let currentSessionId = selectedSessionId;
@@ -159,13 +175,26 @@ const Chat: React.FC = () => {
     if (!currentSessionId) return; // Should not happen
 
     const userMsgText = input;
+    const filesToSend = [...chatFiles];
     setInput('');
+    setChatFiles([]);
     setIsTyping(true);
+
+    // Process images for Firebase storage (Base64)
+    let base64Images: string[] | undefined = undefined;
+    if (filesToSend.length > 0) {
+        const imagePromises = filesToSend.map(async (file) => {
+            const part = await fileToGenerativePart(file);
+            return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        });
+        base64Images = await Promise.all(imagePromises);
+    }
 
     // 1. Save User Message to DB
     await push(ref(db, `chats/${selectedAgentId}/${currentSessionId}/messages`), {
         role: 'user',
         text: userMsgText,
+        images: base64Images || null,
         timestamp: serverTimestamp()
     });
 
@@ -202,16 +231,27 @@ const Chat: React.FC = () => {
         ? knowledge.map(k => k.contentSummary).join('\n\n') 
         : "No specific knowledge base trained for this agent yet.";
 
-    // 4. Prepare History
-    const historyForAi = messages.map(m => ({
-        role: m.role,
-        parts: [{ text: m.text }]
-    }));
-    
-    historyForAi.push({
-        role: 'user',
-        parts: [{ text: userMsgText }]
+    // 4. Prepare History (Include previous images in context)
+    const historyForAi = messages.map(m => {
+        const parts: any[] = [{ text: m.text }];
+        if (m.images) {
+            m.images.forEach(img => {
+                const match = img.match(/^data:(.*?);base64,(.*)$/);
+                if (match) {
+                     parts.push({
+                         inlineData: {
+                             mimeType: match[1],
+                             data: match[2]
+                         }
+                     });
+                }
+            });
+        }
+        return { role: m.role, parts };
     });
+    
+    // Add current user message (without duplication in history array, passed as 'newMessage' to service)
+    // Note: The service handles adding the current message to the conversation call.
 
     const gemini = new GeminiService(apiKeys);
 
@@ -220,8 +260,9 @@ const Chat: React.FC = () => {
             model,
             currentAgent.role + (currentAgent.personality ? ` Personality: ${currentAgent.personality}` : ''),
             contextString,
-            historyForAi.slice(0, -1),
-            userMsgText
+            historyForAi,
+            userMsgText,
+            filesToSend
         );
 
         // 5. Save Model Response to DB
@@ -232,6 +273,7 @@ const Chat: React.FC = () => {
         });
 
     } catch (error) {
+        console.error(error);
         await push(ref(db, `chats/${selectedAgentId}/${currentSessionId}/messages`), {
             role: 'model',
             text: "Error: Failed to connect to AI Agent.",
@@ -444,7 +486,22 @@ const Chat: React.FC = () => {
                         ? 'bg-[#005c4b] text-[#e9edef] rounded-tr-none' 
                         : 'bg-[#202c33] text-[#e9edef] rounded-tl-none'
                     }`}>
+                        {/* Display Images if any */}
+                        {msg.images && msg.images.length > 0 && (
+                            <div className="mb-2 flex flex-wrap gap-2">
+                                {msg.images.map((img, idx) => (
+                                    <img 
+                                        key={idx} 
+                                        src={img} 
+                                        alt="attachment" 
+                                        className="max-w-full h-auto rounded-lg max-h-60 border border-black/20"
+                                    />
+                                ))}
+                            </div>
+                        )}
+
                         {formatMessageText(msg.text)}
+                        
                         <div className="text-[10px] text-right opacity-50 mt-1 flex justify-end items-center gap-2">
                             {/* Copy Button for Model messages */}
                             {msg.role === 'model' && (
@@ -494,26 +551,68 @@ const Chat: React.FC = () => {
             <div ref={bottomRef} />
         </div>
 
-        {/* Input */}
-        <div className="p-3 bg-[#202c33] flex items-center space-x-2">
-            <button className="text-[#8696a0] p-2 hover:bg-[#374248] rounded-full transition-colors">
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 0a12 12 0 1012 12A12.013 12.013 0 0012 0zm0 22a10 10 0 1110-10 10.011 10.011 0 01-10 10zm5-10a1 1 0 11-1 1 1.001 1.001 0 011-1zM7 12a1 1 0 111 1 1 1 0 01-1-1zm5 0a1 1 0 111 1 1 1 0 01-1-1z" /></svg>
-            </button>
-            <input 
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={activeAgent ? "Type a message" : "Select an agent first"}
-                disabled={!activeAgent || isTyping}
-                className="flex-1 bg-[#2a3942] text-white rounded-lg px-4 py-2 outline-none focus:bg-[#2a3942] placeholder-[#8696a0]"
-            />
-            <button 
-                onClick={handleSend}
-                disabled={!input.trim() || !activeAgent || isTyping}
-                className={`p-2 rounded-full transition-colors ${input.trim() ? 'text-[#00a884] hover:bg-[#374248]' : 'text-[#8696a0]'}`}
-            >
-                <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
-            </button>
+        {/* Input Area */}
+        <div className="p-3 bg-[#202c33] flex flex-col gap-2">
+            
+            {/* Image Previews */}
+            {chatFiles.length > 0 && (
+                <div className="flex gap-2 px-2 overflow-x-auto">
+                    {chatFiles.map((file, idx) => (
+                        <div key={idx} className="relative group">
+                            <img 
+                                src={URL.createObjectURL(file)} 
+                                alt="preview" 
+                                className="h-16 w-16 object-cover rounded-lg border border-slate-600"
+                            />
+                            <button
+                                onClick={() => handleRemoveFile(idx)}
+                                className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600 shadow-md"
+                            >
+                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <div className="flex items-center space-x-2">
+                {/* File Attachment Button */}
+                <input 
+                    type="file" 
+                    multiple 
+                    accept="image/*" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    onChange={handleFileSelect}
+                />
+                <button 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-[#8696a0] p-2 hover:bg-[#374248] rounded-full transition-colors"
+                    title="Attach Image"
+                >
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                        <path transform="rotate(-45, 12, 12)" d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 015 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 005 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/>
+                    </svg>
+                </button>
+
+                <input 
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyDown={handleKeyDown}
+                    placeholder={activeAgent ? "Type a message" : "Select an agent first"}
+                    disabled={!activeAgent || isTyping}
+                    className="flex-1 bg-[#2a3942] text-white rounded-lg px-4 py-2 outline-none focus:bg-[#2a3942] placeholder-[#8696a0]"
+                />
+                <button 
+                    onClick={handleSend}
+                    disabled={(!input.trim() && chatFiles.length === 0) || !activeAgent || isTyping}
+                    className={`p-2 rounded-full transition-colors ${input.trim() || chatFiles.length > 0 ? 'text-[#00a884] hover:bg-[#374248]' : 'text-[#8696a0]'}`}
+                >
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
+                </button>
+            </div>
         </div>
       </div>
     </div>
