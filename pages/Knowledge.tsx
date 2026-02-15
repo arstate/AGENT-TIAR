@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GeminiService } from '../services/geminiService';
 import { db } from '../services/firebase';
@@ -88,21 +89,13 @@ const Knowledge: React.FC = () => {
         return;
     }
 
-    if (!settings || !settings.apiKeys || settings.apiKeys.length === 0) {
-        alert("Please configure API Keys in Settings first!");
-        setStatus("Error: No API Keys configured.");
-        setIsProcessing(false);
-        return;
-    }
-
     setStatus('Initializing AI...');
 
-    const gemini = new GeminiService(settings.apiKeys);
-    const model = settings.selectedModel || GeminiModel.FLASH_3;
+    // Guidelines: GeminiService now retrieves the API key internally.
+    const gemini = new GeminiService();
+    const model = settings?.selectedModel || GeminiModel.FLASH_3;
 
     try {
-        let contentToAnalyze = textInput;
-
         // Prompt strategy: Ask AI to extract facts
         const prompt = `
             Analyze the following content (text or attachments). 
