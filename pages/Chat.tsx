@@ -145,11 +145,23 @@ const Chat: React.FC = () => {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files) {
-          setChatFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+          const newFiles = Array.from(e.target.files!);
+          setChatFiles(prev => [...prev, ...newFiles]);
       }
       // Reset input so same file can be selected again if needed
       if (fileInputRef.current) {
           fileInputRef.current.value = '';
+      }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+      // Handle image paste
+      if (e.clipboardData.files.length > 0) {
+          const filesArray = Array.from(e.clipboardData.files).filter(file => file.type.startsWith('image/'));
+          if (filesArray.length > 0) {
+              e.preventDefault(); // Prevent pasting the binary name text
+              setChatFiles(prev => [...prev, ...filesArray]);
+          }
       }
   };
 
@@ -552,21 +564,25 @@ const Chat: React.FC = () => {
         </div>
 
         {/* Input Area */}
-        <div className="p-3 bg-[#202c33] flex flex-col gap-2">
+        <div className="p-3 bg-[#202c33] flex flex-col gap-2 relative">
             
-            {/* Image Previews */}
+            {/* Image Previews (Gemini Style) */}
             {chatFiles.length > 0 && (
-                <div className="flex gap-2 px-2 overflow-x-auto">
+                <div className="flex gap-3 px-2 pb-2 overflow-x-auto">
                     {chatFiles.map((file, idx) => (
-                        <div key={idx} className="relative group">
-                            <img 
-                                src={URL.createObjectURL(file)} 
-                                alt="preview" 
-                                className="h-16 w-16 object-cover rounded-lg border border-slate-600"
-                            />
+                        <div key={idx} className="relative group flex-shrink-0 animate-fade-in-up">
+                            <div className="w-16 h-16 rounded-xl overflow-hidden border border-slate-600 bg-slate-800 shadow-lg relative">
+                                <img 
+                                    src={URL.createObjectURL(file)} 
+                                    alt="preview" 
+                                    className="w-full h-full object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors"></div>
+                            </div>
                             <button
                                 onClick={() => handleRemoveFile(idx)}
-                                className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600 shadow-md"
+                                className="absolute -top-2 -right-2 bg-slate-700 text-slate-300 rounded-full p-1 border border-slate-600 shadow-md hover:bg-red-500 hover:text-white transition-all transform hover:scale-110 z-10"
+                                title="Remove image"
                             >
                                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -577,7 +593,7 @@ const Chat: React.FC = () => {
                 </div>
             )}
 
-            <div className="flex items-center space-x-2">
+            <div className="flex items-end space-x-2 bg-[#2a3942] rounded-2xl p-2 border border-slate-700/50 focus-within:border-slate-500 transition-colors">
                 {/* File Attachment Button */}
                 <input 
                     type="file" 
@@ -589,7 +605,7 @@ const Chat: React.FC = () => {
                 />
                 <button 
                     onClick={() => fileInputRef.current?.click()}
-                    className="text-[#8696a0] p-2 hover:bg-[#374248] rounded-full transition-colors"
+                    className="text-[#8696a0] p-2 hover:bg-[#374248] rounded-full transition-colors mb-0.5"
                     title="Attach Image"
                 >
                     <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
@@ -601,14 +617,17 @@ const Chat: React.FC = () => {
                     value={input}
                     onChange={(e) => setInput(e.target.value)}
                     onKeyDown={handleKeyDown}
-                    placeholder={activeAgent ? "Type a message" : "Select an agent first"}
+                    onPaste={handlePaste}
+                    placeholder={activeAgent ? "Type a message (Paste images Ctrl+V supported)" : "Select an agent first"}
                     disabled={!activeAgent || isTyping}
-                    className="flex-1 bg-[#2a3942] text-white rounded-lg px-4 py-2 outline-none focus:bg-[#2a3942] placeholder-[#8696a0]"
+                    className="flex-1 bg-transparent text-white px-2 py-3 outline-none placeholder-[#8696a0] min-h-[44px] max-h-32"
+                    autoComplete="off"
                 />
+                
                 <button 
                     onClick={handleSend}
                     disabled={(!input.trim() && chatFiles.length === 0) || !activeAgent || isTyping}
-                    className={`p-2 rounded-full transition-colors ${input.trim() || chatFiles.length > 0 ? 'text-[#00a884] hover:bg-[#374248]' : 'text-[#8696a0]'}`}
+                    className={`p-2 rounded-full transition-all mb-0.5 ${input.trim() || chatFiles.length > 0 ? 'text-[#00a884] bg-[#00a884]/10 hover:bg-[#00a884]/20' : 'text-[#8696a0]'}`}
                 >
                     <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg>
                 </button>

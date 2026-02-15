@@ -6,7 +6,12 @@ export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { 
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
-      const base64String = (reader.result as string).split(',')[1];
+      const result = reader.result as string;
+      if (!result) {
+        reject(new Error("Failed to read file"));
+        return;
+      }
+      const base64String = result.split(',')[1];
       resolve({
         inlineData: {
           data: base64String,
@@ -40,6 +45,8 @@ export class GeminiService {
       const indexToCheck = (this.currentKeyIndex + i) % this.apiKeys.length;
       const apiKey = this.apiKeys[indexToCheck];
       
+      if (!apiKey || !apiKey.trim()) continue;
+
       try {
         const ai = new GoogleGenAI({ apiKey });
         const result = await operation(ai);
@@ -48,15 +55,15 @@ export class GeminiService {
         this.currentKeyIndex = indexToCheck;
         return result;
       } catch (error: any) {
-        console.warn(`Attempt failed with API Key ending in ...${apiKey.slice(-4)}:`, error.message);
+        console.warn(`Attempt failed with API Key index ${indexToCheck}:`, error.message);
         lastError = error;
         // Continue to the next iteration (next key)
       }
     }
 
     // If we exit the loop, all keys failed
-    console.error("All API keys failed.");
-    throw lastError;
+    console.error("All API keys failed.", lastError);
+    throw lastError || new Error("All API keys failed.");
   }
 
   async analyzeContent(
@@ -124,7 +131,8 @@ export class GeminiService {
         history: history
       });
 
-      const result = await chat.sendMessage(currentParts);
+      // Pass message as an object with 'message' property
+      const result = await chat.sendMessage({ message: currentParts });
       return result.text || "";
     });
   }
