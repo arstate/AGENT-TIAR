@@ -1,5 +1,5 @@
 
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { GeminiModel } from "../types";
 
 // Helper to convert File to Base64
@@ -26,34 +26,52 @@ export const fileToGenerativePart = async (file: File): Promise<{ inlineData: { 
 };
 
 export class GeminiService {
-  // Constructor simplified as API key must be obtained exclusively from environment variable.
-  constructor() {}
+  private apiKeys: string[];
+  private currentKeyIndex: number = 0;
 
-  // Added robust error handling and retry logic as recommended for API stability.
+  constructor(apiKeys: string[]) {
+    this.apiKeys = apiKeys;
+  }
+
+  // Wrapper to execute API calls with retry logic across all available keys
   private async executeWithRetry<T>(operation: (ai: GoogleGenAI) => Promise<T>): Promise<T> {
-    const apiKey = process.env.API_KEY;
-    if (!apiKey) {
-      throw new Error("API Key is missing from the environment configuration.");
+    if (!this.apiKeys || this.apiKeys.length === 0) {
+      throw new Error("No API Keys configured. Please add them in Settings.");
     }
 
     let lastError: any;
-    const maxRetries = 3;
     
-    for (let i = 0; i < maxRetries; i++) {
+    // Iterate through all keys starting from the current index
+    for (let i = 0; i < this.apiKeys.length; i++) {
+      const indexToCheck = (this.currentKeyIndex + i) % this.apiKeys.length;
+      const apiKey = this.apiKeys[indexToCheck];
+      
+      if (!apiKey || !apiKey.trim()) continue;
+
       try {
-        // Guidelines: Create a new instance right before making an API call.
-        const ai = new GoogleGenAI({ apiKey });
-        return await operation(ai);
-      } catch (error: any) {
-        console.warn(`Attempt ${i + 1} failed:`, error.message);
-        lastError = error;
-        // Exponential backoff
-        if (i < maxRetries - 1) {
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+        // If we are on a retry (i > 0), notify the UI about the rotation
+        if (i > 0) {
+          window.dispatchEvent(new CustomEvent('api-key-rotate', { 
+            detail: { index: indexToCheck + 1 } 
+          }));
         }
+
+        const ai = new GoogleGenAI({ apiKey });
+        const result = await operation(ai);
+        
+        // If successful, update the sticky index to this working key
+        this.currentKeyIndex = indexToCheck;
+        return result;
+      } catch (error: any) {
+        console.warn(`Attempt failed with API Key index ${indexToCheck}:`, error.message);
+        lastError = error;
+        // Continue to the next iteration (next key)
       }
     }
-    throw lastError || new Error("Gemini API request failed after retries.");
+
+    // If we exit the loop, all keys failed
+    console.error("All API keys failed.", lastError);
+    throw lastError || new Error("All API keys failed.");
   }
 
   async analyzeContent(
@@ -61,7 +79,9 @@ export class GeminiService {
     prompt: string,
     files?: File[]
   ): Promise<string> {
+    // Prepare content parts outside the retry loop to avoid reprocessing
     const parts: any[] = [{ text: prompt }];
+
     if (files && files.length > 0) {
       for (const file of files) {
         const part = await fileToGenerativePart(file);
@@ -70,24 +90,24 @@ export class GeminiService {
     }
 
     return this.executeWithRetry(async (ai) => {
-      // Guidelines: Use ai.models.generateContent with both model name and prompt parts.
       const response = await ai.models.generateContent({
         model: modelName,
         contents: { parts },
       });
-      // Guidelines: Use .text property directly.
+
       return response.text || "No analysis generated.";
     });
   }
 
-  async *chatWithAgentStream(
+  async chatWithAgent(
     modelName: GeminiModel,
     agentRole: string,
     knowledgeContext: string,
     history: { role: string; parts: any[] }[],
     newMessage: string,
     files?: File[]
-  ) {
+  ): Promise<string> {
+    
     const systemInstruction = `
         You are an AI Agent with the following role: ${agentRole}.
         
@@ -100,7 +120,9 @@ export class GeminiService {
         Answer concisely and helpful, like a WhatsApp reply.
       `;
 
+    // Prepare current message parts (text + images)
     const currentParts: any[] = [{ text: newMessage }];
+    
     if (files && files.length > 0) {
         for (const file of files) {
             const part = await fileToGenerativePart(file);
@@ -108,37 +130,18 @@ export class GeminiService {
         }
     }
 
-    const stream = await this.executeWithRetry(async (ai) => {
-      // Guidelines: System instruction passed via config in chats.create.
+    return this.executeWithRetry(async (ai) => {
       const chat = ai.chats.create({
         model: modelName,
-        config: { systemInstruction: systemInstruction },
+        config: {
+          systemInstruction: systemInstruction,
+        },
         history: history
       });
-      // Guidelines: chat.sendMessageStream must use named parameter 'message'.
-      return await chat.sendMessageStream({ message: currentParts });
+
+      // Pass message as an object with 'message' property
+      const result = await chat.sendMessage({ message: currentParts });
+      return result.text || "";
     });
-
-    for await (const chunk of stream) {
-      const c = chunk as GenerateContentResponse;
-      // Guidelines: Access the .text property of GenerateContentResponse.
-      yield c.text || "";
-    }
-  }
-
-  async chatWithAgent(
-    modelName: GeminiModel,
-    agentRole: string,
-    knowledgeContext: string,
-    history: { role: string; parts: any[] }[],
-    newMessage: string,
-    files?: File[]
-  ): Promise<string> {
-    let fullText = "";
-    const stream = this.chatWithAgentStream(modelName, agentRole, knowledgeContext, history, newMessage, files);
-    for await (const chunk of stream) {
-      fullText += chunk;
-    }
-    return fullText;
   }
 }

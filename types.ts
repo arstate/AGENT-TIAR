@@ -24,6 +24,7 @@ export interface KnowledgeItem {
 }
 
 export interface AppSettings {
+  apiKeys: string[];
   selectedModel: GeminiModel;
 }
 
