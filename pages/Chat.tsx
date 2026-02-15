@@ -23,7 +23,7 @@ const Chat: React.FC = () => {
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // 1. Load Agents & Knowledge on Mount
+  // 1. Load Agents on Mount
   useEffect(() => {
     const agentsUnsub = onValue(ref(db, 'agents'), (snap) => {
         const data = snap.val();
@@ -37,26 +37,31 @@ const Chat: React.FC = () => {
         }
     });
 
-    const knowledgeUnsub = onValue(ref(db, 'knowledge'), (snap) => {
-        const data = snap.val();
-        if (data) {
-             const list = Object.keys(data).map(k => ({ id: k, ...data[k] }));
-             setKnowledge(list);
-        }
-    });
-
-    return () => { agentsUnsub(); knowledgeUnsub(); };
+    return () => { agentsUnsub(); };
   }, [selectedAgentId]);
 
-  // 2. Load Sessions when Agent Selected
+  // 2. Load Knowledge AND Sessions when Agent Selected
   useEffect(() => {
     if (!selectedAgentId) {
+        setKnowledge([]);
         setSessions([]);
         return;
     }
 
+    // Load Knowledge specific to this agent
+    const knowledgeUnsub = onValue(ref(db, `knowledge/${selectedAgentId}`), (snap) => {
+        const data = snap.val();
+        if (data) {
+             const list = Object.keys(data).map(k => ({ id: k, ...data[k] }));
+             setKnowledge(list);
+        } else {
+            setKnowledge([]);
+        }
+    });
+
+    // Load Sessions
     const sessionsRef = ref(db, `chats/${selectedAgentId}`);
-    const unsub = onValue(sessionsRef, (snap) => {
+    const sessionsUnsub = onValue(sessionsRef, (snap) => {
         const data = snap.val();
         if (data) {
             const list: ChatSession[] = Object.keys(data).map(k => ({
@@ -79,7 +84,7 @@ const Chat: React.FC = () => {
         }
     });
 
-    return () => unsub();
+    return () => { knowledgeUnsub(); sessionsUnsub(); };
   }, [selectedAgentId]);
 
   // 3. Load Messages when Session Selected
@@ -189,20 +194,17 @@ const Chat: React.FC = () => {
     if (!currentAgent) return;
 
     // 3. Prepare Context
-    const contextString = knowledge.map(k => k.contentSummary).join('\n\n');
+    // Only use knowledge associated with this agent
+    const contextString = knowledge.length > 0 
+        ? knowledge.map(k => k.contentSummary).join('\n\n') 
+        : "No specific knowledge base trained for this agent yet.";
 
-    // 4. Prepare History (Fetch latest state including the message we just pushed)
-    // Note: We use the local 'messages' state + the new message for immediate feedback, 
-    // but for the API call, we construct it carefully.
-    
-    // We append the message manually to the history passed to Gemini 
-    // because the DB listener might lag slightly behind this execution function.
+    // 4. Prepare History
     const historyForAi = messages.map(m => ({
         role: m.role,
         parts: [{ text: m.text }]
     }));
     
-    // Add the user's latest message to history logic
     historyForAi.push({
         role: 'user',
         parts: [{ text: userMsgText }]
@@ -215,7 +217,7 @@ const Chat: React.FC = () => {
             model,
             currentAgent.role + (currentAgent.personality ? ` Personality: ${currentAgent.personality}` : ''),
             contextString,
-            historyForAi.slice(0, -1), // Pass history excluding the very last message as sendChat sends the last one
+            historyForAi.slice(0, -1),
             userMsgText
         );
 
@@ -366,7 +368,9 @@ const Chat: React.FC = () => {
                 <div className="flex justify-center mt-10">
                     <div className="bg-[#1f2c34] text-[#8696a0] text-sm px-4 py-2 rounded-lg shadow text-center">
                         Encrypted end-to-end. Agent ready to chat.<br/>
-                        <span className="text-xs opacity-70">Context from DB loaded.</span>
+                        <span className="text-xs opacity-70">
+                            {knowledge.length > 0 ? `${knowledge.length} knowledge items loaded.` : 'No specific training data.'}
+                        </span>
                     </div>
                 </div>
             )}

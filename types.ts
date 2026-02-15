@@ -14,6 +14,7 @@ export interface Agent {
 
 export interface KnowledgeItem {
   id: string;
+  agentId?: string; // Reference to which agent owns this knowledge
   type: 'text' | 'image' | 'pdf' | 'file';
   originalName?: string;
   contentSummary: string; // The "learned" data

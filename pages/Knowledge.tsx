@@ -2,23 +2,53 @@ import React, { useState, useEffect } from 'react';
 import { GeminiService } from '../services/geminiService';
 import { db } from '../services/firebase';
 import { ref, push, onValue, get, child } from 'firebase/database';
-import { GeminiModel, KnowledgeItem, AppSettings } from '../types';
+import { GeminiModel, KnowledgeItem, AppSettings, Agent } from '../types';
 
 const Knowledge: React.FC = () => {
+  const [agents, setAgents] = useState<Agent[]>([]);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>('');
+  
   const [files, setFiles] = useState<File[]>([]);
   const [textInput, setTextInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState('');
   const [knowledgeList, setKnowledgeList] = useState<KnowledgeItem[]>([]);
 
-  // Load existing knowledge
+  // 1. Load Agents
   useEffect(() => {
-    const kRef = ref(db, 'knowledge');
+    const agentsRef = ref(db, 'agents');
+    const unsubscribe = onValue(agentsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        const list: Agent[] = Object.keys(data).map((key) => ({
+          id: key,
+          ...data[key],
+        }));
+        setAgents(list);
+        if (list.length > 0 && !selectedAgentId) {
+            setSelectedAgentId(list[0].id);
+        }
+      } else {
+        setAgents([]);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // 2. Load Knowledge specific to Selected Agent
+  useEffect(() => {
+    if (!selectedAgentId) {
+        setKnowledgeList([]);
+        return;
+    }
+
+    const kRef = ref(db, `knowledge/${selectedAgentId}`);
     const unsub = onValue(kRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
             const list = Object.keys(data).map(key => ({
                 id: key,
+                agentId: selectedAgentId,
                 ...data[key]
             })).sort((a,b) => b.timestamp - a.timestamp);
             setKnowledgeList(list);
@@ -27,7 +57,7 @@ const Knowledge: React.FC = () => {
         }
     });
     return () => unsub();
-  }, []);
+  }, [selectedAgentId]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -36,6 +66,11 @@ const Knowledge: React.FC = () => {
   };
 
   const handleLearn = async () => {
+    if (!selectedAgentId) {
+        alert("Please select an Agent to train first.");
+        return;
+    }
+
     setIsProcessing(true);
     setStatus('Fetching settings...');
 
@@ -67,7 +102,6 @@ const Knowledge: React.FC = () => {
 
     try {
         let contentToAnalyze = textInput;
-        let type: 'text' | 'file' = 'text';
 
         // Prompt strategy: Ask AI to extract facts
         const prompt = `
@@ -85,8 +119,8 @@ const Knowledge: React.FC = () => {
 
         setStatus('Saving to Realtime Database...');
 
-        // Save result to Firebase
-        await push(ref(db, 'knowledge'), {
+        // Save result to Firebase under the SPECIFIC AGENT ID
+        await push(ref(db, `knowledge/${selectedAgentId}`), {
             type: files.length > 0 ? 'file' : 'text',
             originalName: files.length > 0 ? files.map(f => f.name).join(', ') : 'Manual Input',
             contentSummary: summary,
@@ -94,7 +128,7 @@ const Knowledge: React.FC = () => {
             timestamp: Date.now()
         });
 
-        setStatus('Success! Knowledge added.');
+        setStatus('Success! Knowledge added to Agent.');
         setTextInput('');
         setFiles([]);
         
@@ -106,24 +140,60 @@ const Knowledge: React.FC = () => {
     }
   };
 
+  const currentAgent = agents.find(a => a.id === selectedAgentId);
+
   return (
     <div className="space-y-8">
       <div className="border-b border-slate-700 pb-4">
-        <h2 className="text-3xl font-bold text-white">Knowledge Base Training</h2>
-        <p className="text-slate-400 mt-2">Upload documents or images for the AI to learn. This data is stored in Firebase and used by agents.</p>
+        <h2 className="text-3xl font-bold text-white">Train Your Agent</h2>
+        <p className="text-slate-400 mt-2">Upload specific documents or instructions for a specific agent.</p>
+      </div>
+
+      {/* Agent Selector */}
+      <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
+          <label className="block text-sm font-medium text-slate-400 mb-2">Select Agent to Train</label>
+          <div className="flex gap-4 overflow-x-auto pb-2">
+            {agents.length === 0 && <p className="text-slate-500 italic">No agents found. Create one first.</p>}
+            {agents.map(agent => (
+                <button
+                    key={agent.id}
+                    onClick={() => setSelectedAgentId(agent.id)}
+                    className={`flex items-center space-x-3 px-4 py-3 rounded-lg border min-w-[200px] transition-all ${
+                        selectedAgentId === agent.id 
+                        ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500' 
+                        : 'bg-slate-900 border-slate-700 hover:bg-slate-700'
+                    }`}
+                >
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs ${agent.avatar || 'bg-gray-500'}`}>
+                        {agent.name[0]}
+                    </div>
+                    <div className="text-left">
+                        <div className="font-semibold text-white text-sm">{agent.name}</div>
+                        <div className="text-xs text-slate-400 truncate w-24">{agent.role}</div>
+                    </div>
+                </button>
+            ))}
+          </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         
         {/* Input Section */}
         <div className="space-y-6">
-            <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
+            <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl relative overflow-hidden">
+                {/* Visual indicator of which agent is being trained */}
+                {currentAgent && (
+                    <div className="absolute top-0 right-0 p-2 bg-blue-600/10 rounded-bl-xl border-b border-l border-blue-500/30">
+                        <span className="text-xs text-blue-300 font-mono">Training: {currentAgent.name}</span>
+                    </div>
+                )}
+
                 <h3 className="text-xl font-bold mb-4 text-white">Input Data</h3>
                 
-                {/* File Drop Area (Simulated with Input) */}
+                {/* File Drop Area */}
                 <div className="mb-4">
                     <label className="block text-sm font-medium text-slate-400 mb-2">
-                        Files (Images, PDF, Text) - Multiple Allowed
+                        Files (Images, PDF, Text)
                     </label>
                     <div className="relative border-2 border-dashed border-slate-600 rounded-lg p-6 hover:bg-slate-700/50 transition-colors text-center">
                         <input 
@@ -139,7 +209,7 @@ const Knowledge: React.FC = () => {
                             <p className="text-sm text-slate-300">
                                 {files.length > 0 
                                     ? `${files.length} files selected` 
-                                    : "Click or drag files here to upload"}
+                                    : "Click or drag files here"}
                             </p>
                             {files.length > 0 && (
                                 <ul className="text-xs text-slate-500 mt-2">
@@ -165,9 +235,9 @@ const Knowledge: React.FC = () => {
 
                 <button
                     onClick={handleLearn}
-                    disabled={isProcessing || (files.length === 0 && !textInput.trim())}
+                    disabled={isProcessing || !selectedAgentId || (files.length === 0 && !textInput.trim())}
                     className={`w-full py-3 rounded-lg font-bold text-lg shadow-lg flex justify-center items-center ${
-                        isProcessing 
+                        isProcessing || !selectedAgentId
                         ? 'bg-slate-600 cursor-not-allowed' 
                         : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white'
                     }`}
@@ -190,11 +260,13 @@ const Knowledge: React.FC = () => {
 
         {/* Learned Data List */}
         <div className="space-y-4">
-            <h3 className="text-xl font-bold text-white mb-2">Learned Knowledge</h3>
+            <h3 className="text-xl font-bold text-white mb-2">
+                Knowledge for: <span className="text-blue-400">{currentAgent?.name || '...'}</span>
+            </h3>
             <div className="space-y-4 h-[600px] overflow-y-auto pr-2">
                 {knowledgeList.length === 0 ? (
                     <div className="text-slate-500 text-center py-10 border border-slate-700 rounded-xl border-dashed">
-                        No knowledge yet. Train the AI!
+                        {selectedAgentId ? "This agent hasn't learned anything yet." : "Select an agent to see their knowledge."}
                     </div>
                 ) : (
                     knowledgeList.map(item => (
