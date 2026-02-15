@@ -1,8 +1,113 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { db } from '../services/firebase';
 import { ref, onValue, get, child, push, set, remove, serverTimestamp } from 'firebase/database';
 import { GeminiService, fileToGenerativePart } from '../services/geminiService';
 import { Agent, GeminiModel, KnowledgeItem, AppSettings, ChatMessage, ChatSession } from '../types';
+
+// --- HELPER: Image Compression ---
+// Maintains 100% resolution (width/height) for AI readability of text.
+// Reduces quality to 0.6 (JPEG) to save storage space in Realtime Database.
+const compressImage = async (file: File): Promise<File> => {
+    if (!file.type.startsWith('image/')) return file;
+
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            // KEEP ORIGINAL RESOLUTION
+            canvas.width = img.width;
+            canvas.height = img.height;
+            
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                resolve(file); 
+                return;
+            }
+            
+            // Draw image exactly as is
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            
+            // Compress to JPEG at 60% quality
+            canvas.toBlob((blob) => {
+                URL.revokeObjectURL(url);
+                if (blob) {
+                    // Create new File with same name but jpeg type
+                    const compressedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".jpg", {
+                        type: 'image/jpeg',
+                        lastModified: Date.now(),
+                    });
+                    resolve(compressedFile);
+                } else {
+                    resolve(file);
+                }
+            }, 'image/jpeg', 0.6); 
+        };
+        
+        img.onerror = (err) => {
+            URL.revokeObjectURL(url);
+            resolve(file); // Return original if fail
+        };
+        
+        img.src = url;
+    });
+};
+
+// --- COMPONENT: BlobImage ---
+// Converts heavy Base64 string to lightweight Blob URL for rendering
+const BlobImage = ({ base64Src }: { base64Src: string }) => {
+    const [blobUrl, setBlobUrl] = useState<string | null>(null);
+
+    useEffect(() => {
+        let isMounted = true;
+        // Convert Base64 Data URI to Blob
+        fetch(base64Src)
+            .then(res => res.blob())
+            .then(blob => {
+                if(isMounted) {
+                    const url = URL.createObjectURL(blob);
+                    setBlobUrl(url);
+                }
+            })
+            .catch(() => {
+                // Fallback to original if conversion fails
+                if(isMounted) setBlobUrl(base64Src);
+            });
+
+        return () => {
+            isMounted = false;
+            // Cleanup blob url to free memory when component unmounts
+            if (blobUrl && blobUrl.startsWith('blob:')) {
+                URL.revokeObjectURL(blobUrl);
+            }
+        };
+    }, [base64Src]);
+
+    if (!blobUrl) {
+        return (
+            <div className="w-40 h-40 bg-slate-700 animate-pulse rounded-lg flex items-center justify-center">
+                <svg className="w-8 h-8 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+            </div>
+        );
+    }
+
+    return (
+        <a href={blobUrl} target="_blank" rel="noopener noreferrer" className="block relative group cursor-zoom-in">
+            <img 
+                src={blobUrl} 
+                alt="attachment" 
+                className="max-w-full h-auto rounded-lg max-h-60 border border-black/20"
+                loading="lazy"
+            />
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
+                <span className="bg-black/50 text-white text-xs px-2 py-1 rounded">Open Full</span>
+            </div>
+        </a>
+    );
+};
 
 const Chat: React.FC = () => {
   // Data State
@@ -21,6 +126,7 @@ const Chat: React.FC = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
   const [newSessionName, setNewSessionName] = useState('');
+  const [compressionStatus, setCompressionStatus] = useState('');
 
   // UI State
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -119,7 +225,7 @@ const Chat: React.FC = () => {
   // Auto-scroll
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isTyping, chatFiles]);
+  }, [messages, isTyping, chatFiles, compressionStatus]);
 
 
   // Actions
@@ -187,22 +293,38 @@ const Chat: React.FC = () => {
     if (!currentSessionId) return; // Should not happen
 
     const userMsgText = input;
-    const filesToSend = [...chatFiles];
+    const rawFilesToSend = [...chatFiles];
     setInput('');
     setChatFiles([]);
     setIsTyping(true);
 
-    // Process images for Firebase storage (Base64)
+    // --- PROCESS IMAGES ---
     let base64Images: string[] | undefined = undefined;
-    if (filesToSend.length > 0) {
-        const imagePromises = filesToSend.map(async (file) => {
-            const part = await fileToGenerativePart(file);
-            return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-        });
-        base64Images = await Promise.all(imagePromises);
+    let filesForGemini: File[] = [];
+
+    if (rawFilesToSend.length > 0) {
+        setCompressionStatus('Compressing images...');
+        try {
+            // 1. Compress files (Client side, reduces MB, keeps resolution)
+            const compressedFilesPromise = rawFilesToSend.map(f => compressImage(f));
+            filesForGemini = await Promise.all(compressedFilesPromise);
+            
+            // 2. Convert to Base64 for RTDB storage & Gemini API
+            const imagePromises = filesForGemini.map(async (file) => {
+                const part = await fileToGenerativePart(file);
+                return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+            });
+            base64Images = await Promise.all(imagePromises);
+        } catch (e) {
+            console.error("Image processing error", e);
+            setCompressionStatus('Error processing images.');
+            setIsTyping(false);
+            return;
+        }
+        setCompressionStatus('');
     }
 
-    // 1. Save User Message to DB
+    // 1. Save User Message to DB (Realtime DB)
     await push(ref(db, `chats/${selectedAgentId}/${currentSessionId}/messages`), {
         role: 'user',
         text: userMsgText,
@@ -262,19 +384,17 @@ const Chat: React.FC = () => {
         return { role: m.role, parts };
     });
     
-    // Add current user message (without duplication in history array, passed as 'newMessage' to service)
-    // Note: The service handles adding the current message to the conversation call.
-
     const gemini = new GeminiService(apiKeys);
 
     try {
+        // Pass the COMPRESSED files to Gemini
         const responseText = await gemini.chatWithAgent(
             model,
             currentAgent.role + (currentAgent.personality ? ` Personality: ${currentAgent.personality}` : ''),
             contextString,
             historyForAi,
             userMsgText,
-            filesToSend
+            filesForGemini
         );
 
         // 5. Save Model Response to DB
@@ -501,13 +621,10 @@ const Chat: React.FC = () => {
                         {/* Display Images if any */}
                         {msg.images && msg.images.length > 0 && (
                             <div className="mb-2 flex flex-wrap gap-2">
-                                {msg.images.map((img, idx) => (
-                                    <img 
-                                        key={idx} 
-                                        src={img} 
-                                        alt="attachment" 
-                                        className="max-w-full h-auto rounded-lg max-h-60 border border-black/20"
-                                    />
+                                {msg.images.map((imgSrc, idx) => (
+                                    <div key={idx}>
+                                        <BlobImage base64Src={imgSrc} />
+                                    </div>
                                 ))}
                             </div>
                         )}
@@ -551,7 +668,19 @@ const Chat: React.FC = () => {
                 </div>
             ))}
             
-            {isTyping && (
+            {compressionStatus && (
+                <div className="flex justify-end pr-4">
+                     <div className="bg-[#005c4b] text-[#e9edef] text-xs px-3 py-1 rounded-full animate-pulse shadow-sm flex items-center gap-2">
+                        <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        {compressionStatus}
+                     </div>
+                </div>
+            )}
+
+            {isTyping && !compressionStatus && (
                 <div className="flex justify-start">
                      <div className="bg-[#202c33] text-[#e9edef] rounded-lg px-4 py-2 rounded-tl-none text-sm italic opacity-70 flex items-center gap-1">
                          <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce"></span>
