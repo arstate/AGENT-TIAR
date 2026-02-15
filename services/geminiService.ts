@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { GeminiModel } from "../types";
 
@@ -48,6 +49,13 @@ export class GeminiService {
       if (!apiKey || !apiKey.trim()) continue;
 
       try {
+        // If we are on a retry (i > 0), notify the UI about the rotation
+        if (i > 0) {
+          window.dispatchEvent(new CustomEvent('api-key-rotate', { 
+            detail: { index: indexToCheck + 1 } 
+          }));
+        }
+
         const ai = new GoogleGenAI({ apiKey });
         const result = await operation(ai);
         
