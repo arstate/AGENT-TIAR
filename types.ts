@@ -27,9 +27,14 @@ export interface AppSettings {
 }
 
 export interface ChatMessage {
-  id: string;
+  id?: string;
   role: 'user' | 'model';
   text: string;
   timestamp: number;
-  agentId?: string;
+}
+
+export interface ChatSession {
+  id: string;
+  name: string;
+  createdAt: number;
 }

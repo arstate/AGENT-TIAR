@@ -1,29 +1,45 @@
 import React, { useState, useEffect } from 'react';
 import { GeminiModel, AppSettings } from '../types';
+import { db } from '../services/firebase';
+import { ref, onValue, set } from 'firebase/database';
 
 const Settings: React.FC = () => {
   const [keys, setKeys] = useState<string[]>([]);
   const [newKey, setNewKey] = useState('');
   const [selectedModel, setSelectedModel] = useState<GeminiModel>(GeminiModel.FLASH_3);
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const storedSettings = localStorage.getItem('agenAiSettings');
-    if (storedSettings) {
-      const parsed: AppSettings = JSON.parse(storedSettings);
-      setKeys(parsed.apiKeys || []);
-      setSelectedModel(parsed.selectedModel || GeminiModel.FLASH_3);
-    }
+    // Listen to settings from Firebase
+    const settingsRef = ref(db, 'settings');
+    const unsubscribe = onValue(settingsRef, (snapshot) => {
+      const data = snapshot.val();
+      if (data) {
+        setKeys(data.apiKeys || []);
+        setSelectedModel(data.selectedModel || GeminiModel.FLASH_3);
+      }
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
   }, []);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const settings: AppSettings = {
       apiKeys: keys,
       selectedModel: selectedModel,
     };
-    localStorage.setItem('agenAiSettings', JSON.stringify(settings));
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    
+    // Save to Firebase
+    try {
+      await set(ref(db, 'settings'), settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      alert("Failed to save settings to database.");
+    }
   };
 
   const addKey = () => {
@@ -39,11 +55,15 @@ const Settings: React.FC = () => {
     setKeys(newKeys);
   };
 
+  if (loading) {
+    return <div className="p-8 text-center text-slate-400">Loading settings from database...</div>;
+  }
+
   return (
     <div className="space-y-8">
       <div className="border-b border-slate-700 pb-4">
         <h2 className="text-3xl font-bold text-white">System Configuration</h2>
-        <p className="text-slate-400 mt-2">Manage API keys and AI Model behavior.</p>
+        <p className="text-slate-400 mt-2">Manage API keys and AI Model behavior (Synced to Database).</p>
       </div>
 
       {/* API Keys Section */}
@@ -128,7 +148,7 @@ const Settings: React.FC = () => {
           onClick={handleSave}
           className="bg-green-600 hover:bg-green-500 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-green-900/20 transition-all flex items-center"
         >
-          {saved ? 'Settings Saved!' : 'Save Configuration'}
+          {saved ? 'Settings Saved to DB!' : 'Save Configuration'}
         </button>
       </div>
     </div>

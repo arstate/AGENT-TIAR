@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { GeminiService } from '../services/geminiService';
 import { db } from '../services/firebase';
-import { ref, push, onValue } from 'firebase/database';
-import { GeminiModel, KnowledgeItem } from '../types';
+import { ref, push, onValue, get, child } from 'firebase/database';
+import { GeminiModel, KnowledgeItem, AppSettings } from '../types';
 
 const Knowledge: React.FC = () => {
   const [files, setFiles] = useState<File[]>([]);
@@ -36,18 +36,30 @@ const Knowledge: React.FC = () => {
   };
 
   const handleLearn = async () => {
-    const settingsStr = localStorage.getItem('agenAiSettings');
-    if (!settingsStr) {
-        alert("Please configure API Keys in Settings first!");
-        return;
-    }
-    const settings = JSON.parse(settingsStr);
-    if (!settings.apiKeys || settings.apiKeys.length === 0) {
-        alert("No API Keys found in settings.");
+    setIsProcessing(true);
+    setStatus('Fetching settings...');
+
+    // Fetch settings from Firebase
+    let settings: AppSettings | null = null;
+    try {
+        const snapshot = await get(child(ref(db), 'settings'));
+        if (snapshot.exists()) {
+            settings = snapshot.val();
+        }
+    } catch (e) {
+        console.error("Error fetching settings:", e);
+        setStatus("Error: Could not connect to database.");
+        setIsProcessing(false);
         return;
     }
 
-    setIsProcessing(true);
+    if (!settings || !settings.apiKeys || settings.apiKeys.length === 0) {
+        alert("Please configure API Keys in Settings first!");
+        setStatus("Error: No API Keys configured.");
+        setIsProcessing(false);
+        return;
+    }
+
     setStatus('Initializing AI...');
 
     const gemini = new GeminiService(settings.apiKeys);
