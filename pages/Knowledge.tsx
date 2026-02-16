@@ -55,6 +55,7 @@ const Knowledge: React.FC = () => {
   const [processingType, setProcessingType] = useState<'analyze' | 'retrain' | null>(null); // Track operation type
   const [status, setStatus] = useState('');
   const [knowledgeList, setKnowledgeList] = useState<KnowledgeItem[]>([]);
+  const [showRetrainModal, setShowRetrainModal] = useState(false); // Modal visibility state
   
   // Analysis Result State (Ainanalisa)
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
@@ -228,10 +229,15 @@ const Knowledge: React.FC = () => {
     }
   };
 
-  const handleRetrainAll = async () => {
+  // 1. Opens the confirmation modal
+  const handleRetrainClick = () => {
     if (!selectedAgentId || knowledgeList.length === 0) return;
-    if (!window.confirm(`Are you sure you want to Re-Train ${knowledgeList.length} items? This will consume API quota and update all knowledge descriptions.`)) return;
+    setShowRetrainModal(true);
+  };
 
+  // 2. Executes the actual logic (called by Confirm button)
+  const executeRetrain = async () => {
+    setShowRetrainModal(false); // Close modal
     setIsProcessing(true);
     setProcessingType('retrain');
     setStatus('Initializing Re-training...');
@@ -318,7 +324,47 @@ const Knowledge: React.FC = () => {
   const currentAgent = agents.find(a => a.id === selectedAgentId);
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="space-y-8 animate-fade-in relative">
+      {/* --- RE-TRAIN MODAL --- */}
+      {showRetrainModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
+            <div className="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl max-w-md w-full overflow-hidden transform transition-all scale-100">
+                <div className="p-6">
+                    <div className="flex items-center space-x-3 mb-4 text-amber-400">
+                        <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <h3 className="text-xl font-bold text-white">Confirm Re-Training</h3>
+                    </div>
+                    <p className="text-slate-300 mb-6 leading-relaxed">
+                        Are you sure you want to re-analyze <strong>{knowledgeList.length} items</strong>?
+                        <br/><br/>
+                        <span className="text-xs bg-slate-900/80 p-3 rounded border border-slate-700 block text-slate-400">
+                            ⚠️ This will re-process every image and text in this agent's database using your current API quota. This action cannot be undone.
+                        </span>
+                    </p>
+                    <div className="flex space-x-3 justify-end">
+                        <button
+                            onClick={() => setShowRetrainModal(false)}
+                            className="px-4 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-700 transition-colors font-medium"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={executeRetrain}
+                            className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-bold shadow-lg shadow-purple-900/30 flex items-center"
+                        >
+                            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                            Yes, Re-Train All
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+      )}
+
       <div className="border-b border-slate-700 pb-4 flex justify-between items-end">
         <div>
             <h2 className="text-3xl font-bold text-white">AI Analysis & Training</h2>
@@ -491,7 +537,7 @@ const Knowledge: React.FC = () => {
                 </h3>
                 {knowledgeList.length > 0 && selectedAgentId && (
                     <button
-                        onClick={handleRetrainAll}
+                        onClick={handleRetrainClick}
                         disabled={isProcessing}
                         className={`text-xs px-4 py-2 rounded-lg transition-all flex items-center border font-semibold shadow-md active:scale-95 ${
                             isProcessing && processingType === 'retrain'
