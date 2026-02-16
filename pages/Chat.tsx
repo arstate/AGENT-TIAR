@@ -52,6 +52,18 @@ const compressImage = async (file: File): Promise<File> => {
     });
 };
 
+// --- HELPER: Download Image ---
+const downloadImage = (base64Src: string) => {
+    const link = document.createElement('a');
+    link.href = base64Src;
+    // Guess extension
+    const ext = base64Src.startsWith('data:image/png') ? '.png' : '.jpg';
+    link.download = `agenai-download-${Date.now()}${ext}`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+};
+
 // --- COMPONENT: BlobImage or PDF Icon ---
 const FileDisplay = ({ base64Src, onPreview }: { base64Src: string, onPreview: (url: string) => void }) => {
     // Check if PDF
@@ -100,16 +112,30 @@ const BlobImage = ({ base64Src, onPreview }: { base64Src: string, onPreview: (ur
     if (!blobUrl) return null;
 
     return (
-        <div onClick={() => onPreview(blobUrl)} className="block relative group cursor-zoom-in">
+        <div className="block relative group cursor-zoom-in inline-block">
             <img 
+                onClick={() => onPreview(blobUrl)}
                 src={blobUrl} 
                 alt="attachment" 
                 className="max-w-full h-auto rounded-lg max-h-60 border border-black/20"
                 loading="lazy"
             />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors rounded-lg flex items-center justify-center opacity-0 group-hover:opacity-100">
-                <span className="bg-black/50 text-white text-xs px-2 py-1 rounded">View</span>
-            </div>
+            
+            {/* Download Button Overlay */}
+            <button
+                onClick={(e) => {
+                    e.stopPropagation();
+                    downloadImage(base64Src);
+                }}
+                className="absolute bottom-2 right-2 bg-slate-900/80 hover:bg-black text-white p-1.5 rounded-full shadow-lg opacity-80 hover:opacity-100 transition-all border border-slate-600"
+                title="Download Image"
+            >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+            </button>
+
+            <div className="absolute inset-0 pointer-events-none rounded-lg ring-1 ring-inset ring-black/10"></div>
         </div>
     );
 };
@@ -324,8 +350,15 @@ const Chat: React.FC = () => {
     const currentAgent = agents.find(a => a.id === selectedAgentId);
     if (!currentAgent) return;
 
+    // Construct Context with Image IDs for the AI
     const contextString = knowledge.length > 0 
-        ? knowledge.map(k => k.contentSummary).join('\n\n') 
+        ? knowledge.map(k => {
+            let str = `Content: ${k.contentSummary}`;
+            if (k.imageData && k.id) {
+                str = `[IMAGE_ID: ${k.id}] ${str}`; // Prepend Image ID so AI knows it's available
+            }
+            return str;
+        }).join('\n\n') 
         : "No specific knowledge base trained for this agent yet.";
 
     const historyForAi = messages.map(m => {
@@ -346,7 +379,7 @@ const Chat: React.FC = () => {
     const gemini = new GeminiService(apiKeys);
 
     try {
-        const responseText = await gemini.chatWithAgent(
+        let responseText = await gemini.chatWithAgent(
             model,
             currentAgent.role + (currentAgent.personality ? ` Personality: ${currentAgent.personality}` : ''),
             contextString,
@@ -355,9 +388,32 @@ const Chat: React.FC = () => {
             filesForGemini
         );
 
+        // --- PARSE RESPONSE FOR IMAGES ---
+        const modelImagesToSend: string[] = [];
+        const sendImageRegex = /\[\[SEND_IMAGE:\s*(.+?)\]\]/g;
+        let match;
+        
+        // Find all image tags
+        while ((match = sendImageRegex.exec(responseText)) !== null) {
+            const imageId = match[1];
+            // Find the image in local knowledge state
+            const kItem = knowledge.find(k => k.id === imageId);
+            if (kItem && kItem.imageData) {
+                modelImagesToSend.push(kItem.imageData);
+            }
+        }
+
+        // Remove the tags from the visible text
+        responseText = responseText.replace(sendImageRegex, '').trim();
+
+        if (!responseText && modelImagesToSend.length > 0) {
+            responseText = "Sent an image."; // Fallback if AI only sends image tag
+        }
+
         await push(ref(db, `chats/${selectedAgentId}/${currentSessionId}/messages`), {
             role: 'model',
             text: responseText,
+            images: modelImagesToSend.length > 0 ? modelImagesToSend : null,
             timestamp: serverTimestamp()
         });
 

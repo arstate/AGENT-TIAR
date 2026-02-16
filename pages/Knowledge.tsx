@@ -1,9 +1,48 @@
 
 import React, { useState, useEffect } from 'react';
-import { GeminiService } from '../services/geminiService';
+import { GeminiService, fileToGenerativePart } from '../services/geminiService';
 import { db } from '../services/firebase';
 import { ref, push, onValue, get, child, remove } from 'firebase/database';
 import { GeminiModel, KnowledgeItem, AppSettings, Agent } from '../types';
+
+// Helper: Compress Image for Database Storage
+const compressImageForDb = async (file: File): Promise<string> => {
+    if (!file.type.startsWith('image/')) return '';
+    return new Promise((resolve) => {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            // Resize if too large (max 1000px width/height) to save DB space
+            const maxDim = 1000;
+            let width = img.width;
+            let height = img.height;
+            if (width > maxDim || height > maxDim) {
+                if (width > height) {
+                    height = Math.round((height * maxDim) / width);
+                    width = maxDim;
+                } else {
+                    width = Math.round((width * maxDim) / height);
+                    height = maxDim;
+                }
+            }
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if(ctx) {
+                ctx.drawImage(img, 0, 0, width, height);
+                // Convert to JPEG with compression
+                const dataUrl = canvas.toDataURL('image/jpeg', 0.7); 
+                resolve(dataUrl); 
+            } else {
+                resolve('');
+            }
+            URL.revokeObjectURL(url);
+        };
+        img.onerror = () => resolve('');
+        img.src = url;
+    });
+};
 
 const Knowledge: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -125,14 +164,33 @@ const Knowledge: React.FC = () => {
 
         setAnalysisResult(summary); // Show "Ainanalisa" result
 
+        setStatus('Processing image data for database...');
+        
+        // Prepare image data if applicable (Only store the first valid image to save space/complexity for now)
+        let savedImageData = undefined;
+        let fileType: 'text' | 'file' | 'image' | 'pdf' = files.length > 0 ? 'file' : 'text';
+        
+        if (files.length > 0) {
+            for (const file of files) {
+                if (file.type.startsWith('image/')) {
+                    savedImageData = await compressImageForDb(file);
+                    fileType = 'image';
+                    break; // Just save one main image for the knowledge entry
+                } else if (file.type.includes('pdf')) {
+                    fileType = 'pdf';
+                }
+            }
+        }
+
         setStatus('Saving knowledge to Agent memory...');
 
         // Save result to Firebase under the SPECIFIC AGENT ID
         await push(ref(db, `knowledge/${selectedAgentId}`), {
-            type: files.length > 0 ? 'file' : 'text',
+            type: fileType,
             originalName: files.length > 0 ? files.map(f => f.name).join(', ') : 'Text Analysis',
             contentSummary: summary,
             rawContent: textInput,
+            imageData: savedImageData, // <--- SAVING THE IMAGE HERE
             timestamp: Date.now()
         });
 
@@ -168,7 +226,7 @@ const Knowledge: React.FC = () => {
       <div className="border-b border-slate-700 pb-4 flex justify-between items-end">
         <div>
             <h2 className="text-3xl font-bold text-white">AI Analysis & Training</h2>
-            <p className="text-slate-400 mt-2">Upload PDFs, Images, or Text for the agent to analyze and learn.</p>
+            <p className="text-slate-400 mt-2">Upload PDFs, Images, or Text. The AI can memorize images and send them to users!</p>
         </div>
       </div>
 
@@ -258,7 +316,7 @@ const Knowledge: React.FC = () => {
                         value={textInput}
                         onChange={(e) => setTextInput(e.target.value)}
                         className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none h-32"
-                        placeholder="e.g., 'Analyze the attached PDF and remember the payment terms...'"
+                        placeholder="e.g., 'This is the new Promo Poster for March...'"
                     />
                 </div>
 
@@ -347,6 +405,11 @@ const Knowledge: React.FC = () => {
                             <p className="text-sm text-slate-400 line-clamp-4 bg-slate-900/50 p-2 rounded border border-slate-700/50">
                                 {item.contentSummary}
                             </p>
+                            {item.imageData && (
+                                <div className="mt-2">
+                                    <img src={item.imageData} alt="Saved" className="h-16 rounded border border-slate-600 object-cover" />
+                                </div>
+                            )}
                         </div>
                     ))
                 )}

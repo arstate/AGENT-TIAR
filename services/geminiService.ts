@@ -116,6 +116,21 @@ export class GeminiService {
         ${knowledgeContext}
         ---
         
+        IMPORTANT - SENDING IMAGES:
+        The knowledge context above may contain available images in the format: 
+        "[IMAGE_ID: <some_id>] Description: <description>".
+        
+        If the user asks for a specific image (like "send me the promo poster" or "show me the house photo") and you see a matching image in the knowledge context:
+        1. DO NOT describe the image in text if you are sending it.
+        2. Instead, output the tag: [[SEND_IMAGE: <some_id>]].
+        3. You can send multiple images by outputting multiple tags.
+        4. You can add a short caption before or after the tag.
+        
+        Example:
+        User: "Minta info promo dong"
+        Knowledge has: "[IMAGE_ID: img123] Promo Poster 50%"
+        Your Reply: "Ini kak info promonya, silakan dicek ya! [[SEND_IMAGE: img123]]"
+
         If the knowledge doesn't apply, use your general knowledge but stay in character.
         Answer concisely and helpful, like a WhatsApp reply.
       `;

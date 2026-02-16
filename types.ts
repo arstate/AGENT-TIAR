@@ -20,6 +20,7 @@ export interface KnowledgeItem {
   originalName?: string;
   contentSummary: string; // The "learned" data
   rawContent?: string; // For text inputs
+  imageData?: string; // Base64 string of the stored image (for AI to send back)
   timestamp: number;
 }
 
