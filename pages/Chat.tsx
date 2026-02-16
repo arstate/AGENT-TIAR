@@ -350,16 +350,29 @@ const Chat: React.FC = () => {
     const currentAgent = agents.find(a => a.id === selectedAgentId);
     if (!currentAgent) return;
 
-    // Construct Context with Image IDs for the AI
-    const contextString = knowledge.length > 0 
-        ? knowledge.map(k => {
-            let str = `Content: ${k.contentSummary}`;
-            if (k.imageData && k.id) {
-                str = `[IMAGE_ID: ${k.id}] ${str}`; // Prepend Image ID so AI knows it's available
-            }
-            return str;
-        }).join('\n\n') 
-        : "No specific knowledge base trained for this agent yet.";
+    // --- IMPROVED CONTEXT BUILDER ---
+    // Separate Images from General Text to make it easier for AI to select specific files.
+    
+    const imageKnowledge = knowledge.filter(k => k.imageData && k.type === 'image');
+    const textKnowledge = knowledge.filter(k => !k.imageData || k.type !== 'image');
+
+    const imageContextList = imageKnowledge.map(k => {
+        // Clean summary for list format
+        const cleanSummary = k.contentSummary.replace(/\n/g, ' ').substring(0, 300); 
+        return `[IMAGE_ID: ${k.id}] Filename: ${k.originalName} | Description: ${cleanSummary}`;
+    }).join('\n');
+
+    const generalContextList = textKnowledge.map(k => {
+        return `[Source: ${k.originalName || 'Text Info'}]\n${k.contentSummary}`;
+    }).join('\n\n');
+
+    const contextString = `
+    === AVAILABLE IMAGES (Use these IDs to send images) ===
+    ${imageContextList || "No specific images available."}
+
+    === GENERAL INFORMATION & FACTS ===
+    ${generalContextList || "No general information available."}
+    `;
 
     const historyForAi = messages.map(m => {
         const parts: any[] = [{ text: m.text }];
@@ -407,7 +420,7 @@ const Chat: React.FC = () => {
         responseText = responseText.replace(sendImageRegex, '').trim();
 
         if (!responseText && modelImagesToSend.length > 0) {
-            responseText = "Sent an image."; // Fallback if AI only sends image tag
+            responseText = "Berikut fotonya kak:"; // Fallback natural response
         }
 
         await push(ref(db, `chats/${selectedAgentId}/${currentSessionId}/messages`), {

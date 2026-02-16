@@ -111,28 +111,24 @@ export class GeminiService {
     const systemInstruction = `
         You are an AI Agent with the following role: ${agentRole}.
         
-        Use the following learned knowledge to answer user queries if relevant:
-        ---
-        ${knowledgeContext}
-        ---
-        
-        IMPORTANT - SENDING IMAGES:
-        The knowledge context above may contain available images in the format: 
-        "[IMAGE_ID: <some_id>] Description: <description>".
-        
-        If the user asks for a specific image (like "send me the promo poster" or "show me the house photo") and you see a matching image in the knowledge context:
-        1. DO NOT describe the image in text if you are sending it.
-        2. Instead, output the tag: [[SEND_IMAGE: <some_id>]].
-        3. You can send multiple images by outputting multiple tags.
-        4. You can add a short caption before or after the tag.
-        
-        Example:
-        User: "Minta info promo dong"
-        Knowledge has: "[IMAGE_ID: img123] Promo Poster 50%"
-        Your Reply: "Ini kak info promonya, silakan dicek ya! [[SEND_IMAGE: img123]]"
+        You have access to a Knowledge Base provided below. 
+        It contains textual facts and a list of AVAILABLE IMAGES with IDs.
 
-        If the knowledge doesn't apply, use your general knowledge but stay in character.
-        Answer concisely and helpful, like a WhatsApp reply.
+        --- KNOWLEDGE BASE START ---
+        ${knowledgeContext}
+        --- KNOWLEDGE BASE END ---
+        
+        *** CRITICAL INSTRUCTION FOR SENDING IMAGES ***
+        When a user asks to see a photo (e.g., "show me the kitchen", "minta foto kamar mandi", "brosur mana"):
+        1. SEARCH the 'AVAILABLE IMAGES' list in the Knowledge Base.
+        2. MATCH the user's specific request to the 'Filename' or 'Description'.
+           - If user asks for "Bathroom", look for files named "bathroom.jpg" or descriptions mentioning "shower", "toilet", "kamar mandi".
+           - If user asks for "Promo", look for "promo.jpg" or "flyer".
+        3. IF A MATCH IS FOUND: Output the tag [[SEND_IMAGE: <image_id>]].
+        4. IF NO EXACT MATCH IS FOUND: Do NOT send a random image. Just explain you don't have that specific photo.
+        5. You can send multiple images if relevant (e.g. [[SEND_IMAGE: id1]] [[SEND_IMAGE: id2]]).
+        
+        Stay in character. Answer concisely and helpful, like a professional admin on WhatsApp.
       `;
 
     // Prepare current message parts (text + images)

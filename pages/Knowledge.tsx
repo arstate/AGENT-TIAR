@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { GeminiService, fileToGenerativePart } from '../services/geminiService';
 import { db } from '../services/firebase';
-import { ref, push, onValue, get, child, remove } from 'firebase/database';
+import { ref, push, onValue, get, child, remove, update } from 'firebase/database';
 import { GeminiModel, KnowledgeItem, AppSettings, Agent } from '../types';
 
 // Helper: Compress Image for Database Storage
@@ -52,6 +52,7 @@ const Knowledge: React.FC = () => {
   const [textInput, setTextInput] = useState('');
   const [saveImages, setSaveImages] = useState(true); // Default to saving images
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingType, setProcessingType] = useState<'analyze' | 'retrain' | null>(null); // Track operation type
   const [status, setStatus] = useState('');
   const [knowledgeList, setKnowledgeList] = useState<KnowledgeItem[]>([]);
   
@@ -110,6 +111,19 @@ const Knowledge: React.FC = () => {
     }
   };
 
+  // Helper to fetch settings
+  const getSettings = async (): Promise<AppSettings | null> => {
+      try {
+        const snapshot = await get(child(ref(db), 'settings'));
+        if (snapshot.exists()) {
+            return snapshot.val();
+        }
+      } catch (e) {
+        console.error("Error fetching settings:", e);
+      }
+      return null;
+  };
+
   const handleAnalyzeAndLearn = async () => {
     if (!selectedAgentId) {
         alert("Please select an Agent to train first.");
@@ -117,27 +131,16 @@ const Knowledge: React.FC = () => {
     }
 
     setIsProcessing(true);
+    setProcessingType('analyze');
     setStatus('Fetching system settings...');
     setAnalysisResult(null);
 
-    // Fetch settings from Firebase
-    let settings: AppSettings | null = null;
-    try {
-        const snapshot = await get(child(ref(db), 'settings'));
-        if (snapshot.exists()) {
-            settings = snapshot.val();
-        }
-    } catch (e) {
-        console.error("Error fetching settings:", e);
-        setStatus("Error: Could not connect to database.");
-        setIsProcessing(false);
-        return;
-    }
-
+    const settings = await getSettings();
     if (!settings || !settings.apiKeys || settings.apiKeys.length === 0) {
         alert("Please configure API Keys in Settings first!");
         setStatus("Error: No API Keys configured.");
         setIsProcessing(false);
+        setProcessingType(null);
         return;
     }
 
@@ -201,9 +204,6 @@ const Knowledge: React.FC = () => {
         }
 
         // 4. Save Master Text/PDF Entry
-        // If there were PDFs or Text, save a dedicated entry for the "Facts" without an image attached
-        // This ensures the textual knowledge exists even if we didn't upload images, 
-        // OR if we did upload images, this serves as the "Master Document" reference.
         if (otherFiles.length > 0 || textInput.trim() || imageFiles.length === 0) {
              setStatus('Saving analysis text...');
              await push(ref(db, `knowledge/${selectedAgentId}`), {
@@ -224,6 +224,81 @@ const Knowledge: React.FC = () => {
         setStatus(`Analysis Error: ${error.message || 'Failed'}`);
     } finally {
         setIsProcessing(false);
+        setProcessingType(null);
+    }
+  };
+
+  const handleRetrainAll = async () => {
+    if (!selectedAgentId || knowledgeList.length === 0) return;
+    if (!window.confirm(`Are you sure you want to Re-Train ${knowledgeList.length} items? This will consume API quota and update all knowledge descriptions.`)) return;
+
+    setIsProcessing(true);
+    setProcessingType('retrain');
+    setStatus('Initializing Re-training...');
+
+    const settings = await getSettings();
+    if (!settings || !settings.apiKeys || settings.apiKeys.length === 0) {
+        alert("No API Keys found.");
+        setIsProcessing(false);
+        setProcessingType(null);
+        return;
+    }
+
+    const gemini = new GeminiService(settings.apiKeys);
+    const model = settings.selectedModel || GeminiModel.FLASH_3;
+
+    try {
+        for (let i = 0; i < knowledgeList.length; i++) {
+            const item = knowledgeList[i];
+            setStatus(`Re-analyzing ${i + 1}/${knowledgeList.length}: ${item.originalName || 'Text Item'}...`);
+
+            // 1. Prepare Content
+            let filesToAnalyze: File[] = [];
+            const contextText = item.rawContent || "";
+
+            // If it has image data, convert back to File for the Service
+            if (item.imageData && item.type === 'image') {
+                try {
+                    const res = await fetch(item.imageData);
+                    const blob = await res.blob();
+                    const file = new File([blob], item.originalName || "image.jpg", { type: blob.type });
+                    filesToAnalyze.push(file);
+                } catch (e) {
+                    console.error("Failed to restore image for analysis", e);
+                }
+            }
+
+            // 2. Prepare Prompt (Similar to main analysis but strictly for this item)
+            const prompt = `
+                Re-analyze this specific database entry.
+                
+                Context provided by user: "${contextText}"
+                
+                Goal: Extract key facts, visual details (if image), and business logic.
+                Output: A structured summary for an AI Agent Knowledge Base.
+            `;
+
+            // 3. Call AI
+            const newSummary = await gemini.analyzeContent(model, prompt, filesToAnalyze);
+
+            // 4. Update Database
+            // Important: Preserve the [Image File: ...] tag for context builder logic
+            const finalSummary = item.type === 'image' && item.originalName 
+                ? `[Image File: ${item.originalName}]\n${newSummary}`
+                : newSummary;
+
+            await update(ref(db, `knowledge/${selectedAgentId}/${item.id}`), {
+                contentSummary: finalSummary,
+                // We keep original timestamp and rawContent
+            });
+        }
+        setStatus('Re-training Complete! All data refreshed.');
+    } catch (error: any) {
+        console.error(error);
+        setStatus(`Re-training Error: ${error.message}`);
+    } finally {
+        setIsProcessing(false);
+        setProcessingType(null);
     }
   };
 
@@ -260,11 +335,12 @@ const Knowledge: React.FC = () => {
                 <button
                     key={agent.id}
                     onClick={() => { setSelectedAgentId(agent.id); setAnalysisResult(null); }}
+                    disabled={isProcessing}
                     className={`flex items-center space-x-3 px-4 py-3 rounded-lg border min-w-[200px] transition-all ${
                         selectedAgentId === agent.id 
                         ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500' 
                         : 'bg-slate-900 border-slate-700 hover:bg-slate-700'
-                    }`}
+                    } ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs ${agent.avatar || 'bg-gray-500'}`}>
                         {agent.name[0]}
@@ -282,7 +358,7 @@ const Knowledge: React.FC = () => {
         
         {/* Input Section */}
         <div className="space-y-6">
-            <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl relative overflow-hidden">
+            <div className={`bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl relative overflow-hidden transition-opacity ${isProcessing && processingType === 'retrain' ? 'opacity-50 pointer-events-none' : ''}`}>
                 {/* Visual indicator */}
                 {currentAgent && (
                     <div className="absolute top-0 right-0 p-2 bg-blue-600/10 rounded-bl-xl border-b border-l border-blue-500/30">
@@ -302,13 +378,14 @@ const Knowledge: React.FC = () => {
                     <label className="block text-sm font-medium text-slate-400 mb-2">
                         Upload Files (PDF, Images)
                     </label>
-                    <div className="relative border-2 border-dashed border-slate-600 rounded-lg p-6 hover:bg-slate-700/50 transition-colors text-center group">
+                    <div className={`relative border-2 border-dashed border-slate-600 rounded-lg p-6 hover:bg-slate-700/50 transition-colors text-center group ${isProcessing ? 'cursor-not-allowed opacity-50 bg-slate-900/50' : ''}`}>
                         <input 
                             type="file" 
                             multiple 
                             accept=".pdf,image/*"
                             onChange={handleFileChange} 
-                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            disabled={isProcessing}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
                         />
                         <div className="pointer-events-none">
                             <svg className="mx-auto h-10 w-10 text-slate-400 mb-2 group-hover:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -317,7 +394,7 @@ const Knowledge: React.FC = () => {
                             <p className="text-sm text-slate-300">
                                 {files.length > 0 
                                     ? `${files.length} files selected` 
-                                    : "Click or Drag PDFs / Images here"}
+                                    : (isProcessing ? "Processing..." : "Click or Drag PDFs / Images here")}
                             </p>
                             {files.length > 0 && (
                                 <ul className="text-xs text-blue-300 mt-2">
@@ -336,14 +413,15 @@ const Knowledge: React.FC = () => {
                     <textarea 
                         value={textInput}
                         onChange={(e) => setTextInput(e.target.value)}
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none h-32"
+                        disabled={isProcessing}
+                        className={`w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none h-32 ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
                         placeholder="e.g., 'This is the new Promo Poster set for March...'"
                     />
                 </div>
                 
                 {/* Save Images Toggle */}
                 {files.some(f => f.type.startsWith('image/')) && (
-                    <div className="mb-6 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50 flex items-center justify-between">
+                    <div className={`mb-6 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50 flex items-center justify-between ${isProcessing ? 'opacity-50' : ''}`}>
                         <div>
                             <span className="block text-sm font-bold text-white">Save Images to Database?</span>
                             <span className="text-xs text-slate-400">
@@ -353,7 +431,8 @@ const Knowledge: React.FC = () => {
                             </span>
                         </div>
                         <button
-                            onClick={() => setSaveImages(!saveImages)}
+                            onClick={() => !isProcessing && setSaveImages(!saveImages)}
+                            disabled={isProcessing}
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${saveImages ? 'bg-green-500' : 'bg-slate-600'}`}
                         >
                             <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${saveImages ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -370,7 +449,7 @@ const Knowledge: React.FC = () => {
                         : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white transform hover:scale-[1.02]'
                     }`}
                 >
-                    {isProcessing ? (
+                    {isProcessing && processingType === 'analyze' ? (
                         <>
                             <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -403,13 +482,45 @@ const Knowledge: React.FC = () => {
 
         {/* Learned Data List */}
         <div className="space-y-4">
-            <h3 className="text-xl font-bold text-white mb-2 flex items-center">
-                <svg className="w-5 h-5 mr-2 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
-                </svg>
-                Knowledge Base
-            </h3>
-            <div className="space-y-4 h-[700px] overflow-y-auto pr-2 scrollbar-thin">
+            <div className="flex justify-between items-center mb-2">
+                <h3 className="text-xl font-bold text-white flex items-center">
+                    <svg className="w-5 h-5 mr-2 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                    </svg>
+                    Knowledge Base
+                </h3>
+                {knowledgeList.length > 0 && selectedAgentId && (
+                    <button
+                        onClick={handleRetrainAll}
+                        disabled={isProcessing}
+                        className={`text-xs px-4 py-2 rounded-lg transition-all flex items-center border font-semibold shadow-md active:scale-95 ${
+                            isProcessing && processingType === 'retrain'
+                            ? 'bg-purple-900/50 text-purple-300 border-purple-800 cursor-not-allowed'
+                            : 'bg-purple-600 text-white border-purple-500 hover:bg-purple-500' 
+                        }`}
+                        title="Re-analyze all existing data with current model/prompt"
+                    >
+                        {isProcessing && processingType === 'retrain' ? (
+                            <>
+                                <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-purple-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                {status.includes('Re-analyzing') ? status.split(':')[0] : 'Re-Training...'}
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                </svg>
+                                Re-Train All Data
+                            </>
+                        )}
+                    </button>
+                )}
+            </div>
+            
+            <div className={`space-y-4 h-[700px] overflow-y-auto pr-2 scrollbar-thin ${isProcessing && processingType === 'retrain' ? 'opacity-70 pointer-events-none' : ''}`}>
                 {knowledgeList.length === 0 ? (
                     <div className="text-slate-500 text-center py-10 border border-slate-700 rounded-xl border-dashed">
                         {selectedAgentId ? "This agent hasn't learned anything yet." : "Select an agent to see their knowledge."}
