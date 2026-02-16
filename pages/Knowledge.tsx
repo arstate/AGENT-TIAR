@@ -160,41 +160,56 @@ const Knowledge: React.FC = () => {
 
         setStatus(files.length > 0 ? `Analyzing ${files.length} files (PDF/Images) with ${model}...` : 'Analyzing text...');
         
+        // 1. Analyze ALL content together to get the shared context/facts
         const summary = await gemini.analyzeContent(model, prompt, files);
-
         setAnalysisResult(summary); // Show "Ainanalisa" result
 
-        setStatus('Processing image data for database...');
-        
-        // Prepare image data if applicable (Only store the first valid image to save space/complexity for now)
-        let savedImageData = undefined;
-        let fileType: 'text' | 'file' | 'image' | 'pdf' = files.length > 0 ? 'file' : 'text';
-        
-        if (files.length > 0) {
-            for (const file of files) {
-                if (file.type.startsWith('image/')) {
-                    savedImageData = await compressImageForDb(file);
-                    fileType = 'image';
-                    break; // Just save one main image for the knowledge entry
-                } else if (file.type.includes('pdf')) {
-                    fileType = 'pdf';
-                }
+        setStatus('Processing data for storage...');
+
+        // 2. Separate files by type
+        const imageFiles = files.filter(f => f.type.startsWith('image/'));
+        const otherFiles = files.filter(f => !f.type.startsWith('image/'));
+
+        // 3. Save ALL Images individually
+        // This ensures "unlimited" images can be stored and retrieved by ID
+        if (imageFiles.length > 0) {
+            for (let i = 0; i < imageFiles.length; i++) {
+                const img = imageFiles[i];
+                setStatus(`Saving image ${i + 1} of ${imageFiles.length}: ${img.name}...`);
+                
+                const b64 = await compressImageForDb(img);
+                
+                // We append the filename to the summary so the AI knows WHICH image this is
+                // e.g. "Front View.jpg - Context: This is a house..."
+                const specificSummary = `[Image File: ${img.name}]\n${summary}`;
+
+                await push(ref(db, `knowledge/${selectedAgentId}`), {
+                    type: 'image',
+                    originalName: img.name,
+                    contentSummary: specificSummary,
+                    rawContent: textInput,
+                    imageData: b64,
+                    timestamp: Date.now()
+                });
             }
         }
 
-        setStatus('Saving knowledge to Agent memory...');
+        // 4. Save Master Text/PDF Entry
+        // If there were PDFs or Text, save a dedicated entry for the "Facts" without an image attached
+        // This ensures the textual knowledge exists even if we didn't upload images, 
+        // OR if we did upload images, this serves as the "Master Document" reference.
+        if (otherFiles.length > 0 || textInput.trim() || imageFiles.length === 0) {
+             setStatus('Saving analysis text...');
+             await push(ref(db, `knowledge/${selectedAgentId}`), {
+                type: otherFiles.length > 0 ? 'file' : 'text',
+                originalName: otherFiles.length > 0 ? otherFiles.map(f => f.name).join(', ') : 'Text Input',
+                contentSummary: summary,
+                rawContent: textInput,
+                timestamp: Date.now()
+            });
+        }
 
-        // Save result to Firebase under the SPECIFIC AGENT ID
-        await push(ref(db, `knowledge/${selectedAgentId}`), {
-            type: fileType,
-            originalName: files.length > 0 ? files.map(f => f.name).join(', ') : 'Text Analysis',
-            contentSummary: summary,
-            rawContent: textInput,
-            imageData: savedImageData, // <--- SAVING THE IMAGE HERE
-            timestamp: Date.now()
-        });
-
-        setStatus('Analysis Complete & Saved!');
+        setStatus('Analysis Complete & All Data Saved!');
         setTextInput('');
         setFiles([]);
         
@@ -226,7 +241,7 @@ const Knowledge: React.FC = () => {
       <div className="border-b border-slate-700 pb-4 flex justify-between items-end">
         <div>
             <h2 className="text-3xl font-bold text-white">AI Analysis & Training</h2>
-            <p className="text-slate-400 mt-2">Upload PDFs, Images, or Text. The AI can memorize images and send them to users!</p>
+            <p className="text-slate-400 mt-2">Upload PDFs, Images, or Text. The AI can memorize multiple images and send them to users!</p>
         </div>
       </div>
 
@@ -316,7 +331,7 @@ const Knowledge: React.FC = () => {
                         value={textInput}
                         onChange={(e) => setTextInput(e.target.value)}
                         className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none h-32"
-                        placeholder="e.g., 'This is the new Promo Poster for March...'"
+                        placeholder="e.g., 'This is the new Promo Poster set for March...'"
                     />
                 </div>
 
@@ -335,13 +350,12 @@ const Knowledge: React.FC = () => {
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
-                            Analyzing & Learning...
+                            {status || 'Analyzing & Learning...'}
                         </>
                     ) : (
                         'Analyze & Learn Data'
                     )}
                 </button>
-                {status && <p className={`mt-3 text-center text-sm ${status.includes('Error') ? 'text-red-400' : 'text-green-400 animate-pulse'}`}>{status}</p>}
             </div>
             
             {/* Analysis Result (Ainanalisa View) */}
@@ -356,7 +370,7 @@ const Knowledge: React.FC = () => {
                     <div className="bg-black/30 rounded p-4 text-sm text-slate-200 whitespace-pre-wrap font-mono border border-slate-700/50 max-h-60 overflow-y-auto">
                         {analysisResult}
                     </div>
-                    <p className="text-xs text-slate-500 mt-2 italic text-right">This data has been saved to the agent's knowledge base.</p>
+                    <p className="text-xs text-slate-500 mt-2 italic text-right">This data and images have been saved to the agent's knowledge base.</p>
                 </div>
             )}
         </div>
