@@ -50,6 +50,7 @@ const Knowledge: React.FC = () => {
   
   const [files, setFiles] = useState<File[]>([]);
   const [textInput, setTextInput] = useState('');
+  const [saveImages, setSaveImages] = useState(true); // Default to saving images
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState('');
   const [knowledgeList, setKnowledgeList] = useState<KnowledgeItem[]>([]);
@@ -175,9 +176,14 @@ const Knowledge: React.FC = () => {
         if (imageFiles.length > 0) {
             for (let i = 0; i < imageFiles.length; i++) {
                 const img = imageFiles[i];
-                setStatus(`Saving image ${i + 1} of ${imageFiles.length}: ${img.name}...`);
-                
-                const b64 = await compressImageForDb(img);
+                let b64 = undefined;
+
+                if (saveImages) {
+                    setStatus(`Saving image ${i + 1} of ${imageFiles.length}: ${img.name}...`);
+                    b64 = await compressImageForDb(img);
+                } else {
+                    setStatus(`Processing image ${i + 1} of ${imageFiles.length} (Analysis Only)...`);
+                }
                 
                 // We append the filename to the summary so the AI knows WHICH image this is
                 // e.g. "Front View.jpg - Context: This is a house..."
@@ -188,7 +194,7 @@ const Knowledge: React.FC = () => {
                     originalName: img.name,
                     contentSummary: specificSummary,
                     rawContent: textInput,
-                    imageData: b64,
+                    imageData: b64 || null, // Store image data only if toggle is ON
                     timestamp: Date.now()
                 });
             }
@@ -334,6 +340,26 @@ const Knowledge: React.FC = () => {
                         placeholder="e.g., 'This is the new Promo Poster set for March...'"
                     />
                 </div>
+                
+                {/* Save Images Toggle */}
+                {files.some(f => f.type.startsWith('image/')) && (
+                    <div className="mb-6 bg-slate-900/50 p-3 rounded-lg border border-slate-700/50 flex items-center justify-between">
+                        <div>
+                            <span className="block text-sm font-bold text-white">Save Images to Database?</span>
+                            <span className="text-xs text-slate-400">
+                                {saveImages 
+                                    ? "ON: Images will be stored. AI can send them to users." 
+                                    : "OFF: AI analyzes images but doesn't store the file."}
+                            </span>
+                        </div>
+                        <button
+                            onClick={() => setSaveImages(!saveImages)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${saveImages ? 'bg-green-500' : 'bg-slate-600'}`}
+                        >
+                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${saveImages ? 'translate-x-6' : 'translate-x-1'}`} />
+                        </button>
+                    </div>
+                )}
 
                 <button
                     onClick={handleAnalyzeAndLearn}
