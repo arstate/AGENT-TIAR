@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { GeminiService, fileToGenerativePart } from '../services/geminiService';
 import { db } from '../services/firebase';
-import { ref, push, onValue, get, child, remove, update } from 'firebase/database';
+import { ref, push, onValue, get, child, remove, update, set } from 'firebase/database';
 import { GeminiModel, KnowledgeItem, AppSettings, Agent } from '../types';
 
 // Helper: Compress Image for Database Storage
@@ -44,6 +44,13 @@ const compressImageForDb = async (file: File): Promise<string> => {
     });
 };
 
+interface TrainingProgress {
+    lastProcessedId: string;
+    timestamp: number;
+    totalItems: number;
+    processedCount: number;
+}
+
 const Knowledge: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string>('');
@@ -56,6 +63,10 @@ const Knowledge: React.FC = () => {
   const [status, setStatus] = useState('');
   const [knowledgeList, setKnowledgeList] = useState<KnowledgeItem[]>([]);
   const [showRetrainModal, setShowRetrainModal] = useState(false); // Modal visibility state
+  
+  // Progress & Resume State
+  const [savedProgress, setSavedProgress] = useState<TrainingProgress | null>(null);
+  const stopRetrainRef = useRef(false); // Ref to signal loop interruption
   
   // Analysis Result State (Ainanalisa)
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
@@ -81,15 +92,17 @@ const Knowledge: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // 2. Load Knowledge specific to Selected Agent
+  // 2. Load Knowledge & Progress specific to Selected Agent
   useEffect(() => {
     if (!selectedAgentId) {
         setKnowledgeList([]);
+        setSavedProgress(null);
         return;
     }
 
+    // Load Knowledge
     const kRef = ref(db, `knowledge/${selectedAgentId}`);
-    const unsub = onValue(kRef, (snapshot) => {
+    const unsubKnowledge = onValue(kRef, (snapshot) => {
         const data = snapshot.val();
         if (data) {
             const list = Object.keys(data).map(key => ({
@@ -102,7 +115,18 @@ const Knowledge: React.FC = () => {
             setKnowledgeList([]);
         }
     });
-    return () => unsub();
+
+    // Load Saved Progress
+    const progressRef = ref(db, `trainingProgress/${selectedAgentId}`);
+    const unsubProgress = onValue(progressRef, (snapshot) => {
+        const data = snapshot.val();
+        setSavedProgress(data || null);
+    });
+
+    return () => {
+        unsubKnowledge();
+        unsubProgress();
+    };
   }, [selectedAgentId]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -234,10 +258,19 @@ const Knowledge: React.FC = () => {
     if (!selectedAgentId || knowledgeList.length === 0) return;
     setShowRetrainModal(true);
   };
+  
+  // Handle Pause/Stop
+  const handleStopRetrain = () => {
+      if (confirm("Pause current training? Progress will be saved.")) {
+          stopRetrainRef.current = true;
+          setStatus("Stopping...");
+      }
+  };
 
   // 2. Executes the actual logic (called by Confirm button)
-  const executeRetrain = async () => {
+  const executeRetrain = async (resume: boolean = false) => {
     setShowRetrainModal(false); // Close modal
+    stopRetrainRef.current = false;
     setIsProcessing(true);
     setProcessingType('retrain');
     setStatus('Initializing Re-training...');
@@ -254,7 +287,35 @@ const Knowledge: React.FC = () => {
     const model = settings.selectedModel || GeminiModel.FLASH_3;
 
     try {
-        for (let i = 0; i < knowledgeList.length; i++) {
+        let startIndex = 0;
+
+        // If resuming, find where we left off
+        if (resume && savedProgress && savedProgress.lastProcessedId) {
+            // Because knowledgeList might be sorted by timestamp, we need to find the index of the ID
+            const foundIndex = knowledgeList.findIndex(k => k.id === savedProgress.lastProcessedId);
+            if (foundIndex !== -1) {
+                startIndex = foundIndex + 1; // Start from next item
+            }
+        }
+
+        // Reset progress if starting fresh
+        if (!resume) {
+            await set(ref(db, `trainingProgress/${selectedAgentId}`), {
+                lastProcessedId: '',
+                timestamp: Date.now(),
+                totalItems: knowledgeList.length,
+                processedCount: 0
+            });
+        }
+
+        for (let i = startIndex; i < knowledgeList.length; i++) {
+            // Check for Stop Signal
+            if (stopRetrainRef.current) {
+                setStatus("Training Paused. Progress saved.");
+                setIsProcessing(false);
+                return; // Exit loop, keeping progress in DB
+            }
+
             const item = knowledgeList[i];
             setStatus(`Re-analyzing ${i + 1}/${knowledgeList.length}: ${item.originalName || 'Text Item'}...`);
 
@@ -262,7 +323,6 @@ const Knowledge: React.FC = () => {
             let filesToAnalyze: File[] = [];
             const contextText = item.rawContent || "";
 
-            // If it has image data, convert back to File for the Service
             if (item.imageData && item.type === 'image') {
                 try {
                     const res = await fetch(item.imageData);
@@ -274,12 +334,10 @@ const Knowledge: React.FC = () => {
                 }
             }
 
-            // 2. Prepare Prompt (Similar to main analysis but strictly for this item)
+            // 2. Prepare Prompt
             const prompt = `
                 Re-analyze this specific database entry.
-                
                 Context provided by user: "${contextText}"
-                
                 Goal: Extract key facts, visual details (if image), and business logic.
                 Output: A structured summary for an AI Agent Knowledge Base.
             `;
@@ -288,23 +346,35 @@ const Knowledge: React.FC = () => {
             const newSummary = await gemini.analyzeContent(model, prompt, filesToAnalyze);
 
             // 4. Update Database
-            // Important: Preserve the [Image File: ...] tag for context builder logic
             const finalSummary = item.type === 'image' && item.originalName 
                 ? `[Image File: ${item.originalName}]\n${newSummary}`
                 : newSummary;
 
             await update(ref(db, `knowledge/${selectedAgentId}/${item.id}`), {
                 contentSummary: finalSummary,
-                // We keep original timestamp and rawContent
+            });
+
+            // 5. UPDATE PROGRESS Checkpoint
+            await update(ref(db, `trainingProgress/${selectedAgentId}`), {
+                lastProcessedId: item.id,
+                timestamp: Date.now(),
+                totalItems: knowledgeList.length,
+                processedCount: i + 1
             });
         }
+        
+        // Loop finished successfully
         setStatus('Re-training Complete! All data refreshed.');
+        // Clear progress
+        await remove(ref(db, `trainingProgress/${selectedAgentId}`));
+
     } catch (error: any) {
         console.error(error);
         setStatus(`Re-training Error: ${error.message}`);
     } finally {
         setIsProcessing(false);
         setProcessingType(null);
+        stopRetrainRef.current = false;
     }
   };
 
@@ -334,31 +404,66 @@ const Knowledge: React.FC = () => {
                         <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                         </svg>
-                        <h3 className="text-xl font-bold text-white">Confirm Re-Training</h3>
+                        <h3 className="text-xl font-bold text-white">Re-Train Database</h3>
                     </div>
-                    <p className="text-slate-300 mb-6 leading-relaxed">
-                        Are you sure you want to re-analyze <strong>{knowledgeList.length} items</strong>?
-                        <br/><br/>
-                        <span className="text-xs bg-slate-900/80 p-3 rounded border border-slate-700 block text-slate-400">
-                            ⚠️ This will re-process every image and text in this agent's database using your current API quota. This action cannot be undone.
-                        </span>
-                    </p>
-                    <div className="flex space-x-3 justify-end">
+                    
+                    {savedProgress ? (
+                        <div className="mb-6 bg-slate-900/80 p-4 rounded-lg border border-slate-700">
+                             <p className="text-slate-300 mb-2">
+                                 Found saved progress:
+                             </p>
+                             <div className="w-full bg-slate-700 h-2 rounded-full mb-2">
+                                 <div 
+                                    className="bg-green-500 h-2 rounded-full" 
+                                    style={{ width: `${Math.round((savedProgress.processedCount / savedProgress.totalItems) * 100)}%` }}
+                                 ></div>
+                             </div>
+                             <p className="text-xs text-slate-400">
+                                 Processed {savedProgress.processedCount} of {savedProgress.totalItems} items.
+                             </p>
+                             <div className="mt-4 flex flex-col gap-2">
+                                <button
+                                    onClick={() => executeRetrain(true)}
+                                    className="w-full py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold text-sm"
+                                >
+                                    Resume from Item {savedProgress.processedCount + 1}
+                                </button>
+                                <button
+                                    onClick={() => executeRetrain(false)}
+                                    className="w-full py-2 bg-slate-700 hover:bg-slate-600 text-slate-200 rounded text-sm"
+                                >
+                                    Restart from Beginning (0%)
+                                </button>
+                             </div>
+                        </div>
+                    ) : (
+                        <p className="text-slate-300 mb-6 leading-relaxed">
+                            Are you sure you want to re-analyze <strong>{knowledgeList.length} items</strong>?
+                            <br/><br/>
+                            <span className="text-xs bg-slate-900/80 p-3 rounded border border-slate-700 block text-slate-400">
+                                ⚠️ This will re-process every image and text in this agent's database using your current API quota.
+                            </span>
+                        </p>
+                    )}
+
+                    <div className="flex space-x-3 justify-end mt-4 border-t border-slate-700 pt-4">
                         <button
                             onClick={() => setShowRetrainModal(false)}
                             className="px-4 py-2 rounded-lg text-slate-300 hover:text-white hover:bg-slate-700 transition-colors font-medium"
                         >
                             Cancel
                         </button>
-                        <button
-                            onClick={executeRetrain}
-                            className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-bold shadow-lg shadow-purple-900/30 flex items-center"
-                        >
-                            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                            </svg>
-                            Yes, Re-Train All
-                        </button>
+                        {!savedProgress && (
+                            <button
+                                onClick={() => executeRetrain(false)}
+                                className="px-4 py-2 rounded-lg bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-500 hover:to-purple-600 text-white font-bold shadow-lg shadow-purple-900/30 flex items-center"
+                            >
+                                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                Start Re-Training
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -537,29 +642,39 @@ const Knowledge: React.FC = () => {
                 </h3>
                 {knowledgeList.length > 0 && selectedAgentId && (
                     <button
-                        onClick={handleRetrainClick}
-                        disabled={isProcessing}
+                        onClick={isProcessing ? handleStopRetrain : handleRetrainClick}
                         className={`text-xs px-4 py-2 rounded-lg transition-all flex items-center border font-semibold shadow-md active:scale-95 ${
                             isProcessing && processingType === 'retrain'
-                            ? 'bg-purple-900/50 text-purple-300 border-purple-800 cursor-not-allowed'
-                            : 'bg-purple-600 text-white border-purple-500 hover:bg-purple-500' 
+                            ? 'bg-red-900/50 text-red-300 border-red-800 hover:bg-red-800'
+                            : savedProgress
+                                ? 'bg-green-600 text-white border-green-500 hover:bg-green-500' // Resume Look
+                                : 'bg-purple-600 text-white border-purple-500 hover:bg-purple-500' // Default Look
                         }`}
-                        title="Re-analyze all existing data with current model/prompt"
+                        title={savedProgress ? "Continue Previous Training" : "Re-analyze all existing data"}
                     >
                         {isProcessing && processingType === 'retrain' ? (
                             <>
-                                <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-purple-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <svg className="animate-spin -ml-1 mr-2 h-3 w-3 text-red-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                                 </svg>
-                                {status.includes('Re-analyzing') ? status.split(':')[0] : 'Re-Training...'}
+                                {status.includes('Re-analyzing') ? (
+                                    <span>Stop ({status.split(':')[0].replace('Re-analyzing ', '')})</span>
+                                ) : 'Pause / Stop'}
                             </>
                         ) : (
                             <>
-                                <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                </svg>
-                                Re-Train All Data
+                                {savedProgress ? (
+                                    <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                ) : (
+                                    <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                )}
+                                {savedProgress ? 'Resume Training' : 'Re-Train All Data'}
                             </>
                         )}
                     </button>
