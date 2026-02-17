@@ -57,7 +57,7 @@ const Settings: React.FC = () => {
       setTimeout(() => setSaved(false), 2000);
     } catch (error) {
       console.error("Error saving settings:", error);
-      alert("Failed to save settings to database.");
+      alert("Gagal menyimpan pengaturan ke database.");
     }
   };
 
@@ -75,14 +75,14 @@ const Settings: React.FC = () => {
   };
 
   if (loading) {
-    return <div className="p-8 text-center text-slate-400">Loading settings from database...</div>;
+    return <div className="p-8 text-center text-slate-400">Memuat pengaturan...</div>;
   }
 
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="border-b border-slate-700 pb-4">
-        <h2 className="text-3xl font-bold text-white tracking-tight">System Configuration</h2>
-        <p className="text-slate-400 mt-2">Manage API keys, AI Model, and Storage optimization.</p>
+        <h2 className="text-3xl font-bold text-white tracking-tight">Konfigurasi Sistem</h2>
+        <p className="text-slate-400 mt-2">Kelola API Key, Model AI, dan Optimasi Penyimpanan.</p>
       </div>
 
       {/* API Keys Section */}
@@ -92,7 +92,7 @@ const Settings: React.FC = () => {
                 <svg className="w-3 h-3 mr-1 animate-spin-slow" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                Auto-Rotation Active
+                Rotasi Otomatis Aktif
             </div>
         )}
 
@@ -100,10 +100,10 @@ const Settings: React.FC = () => {
           <svg className="w-6 h-6 mr-2 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
           </svg>
-          Rotating API Keys
+          Rotasi API Key
         </h3>
         <p className="text-sm text-slate-400 mb-4">
-          Add multiple Gemini API keys. The system will <strong>automatically rotate</strong> to the next key if a rate limit (429) is hit, ensuring uninterrupted service.
+          Tambahkan beberapa Gemini API Key. Sistem akan <strong>secara otomatis merotasi</strong> ke kunci berikutnya jika batas penggunaan (429) tercapai.
         </p>
 
         <div className="flex gap-2 mb-4">
@@ -111,7 +111,7 @@ const Settings: React.FC = () => {
             type="text"
             value={newKey}
             onChange={(e) => setNewKey(e.target.value)}
-            placeholder="Paste Gemini API Key here (AIza...)"
+            placeholder="Tempel Gemini API Key disini (AIza...)"
             className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none font-mono"
           />
           <button
@@ -121,7 +121,7 @@ const Settings: React.FC = () => {
              <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
              </svg>
-             Add Key
+             Tambah
           </button>
         </div>
 
@@ -149,7 +149,7 @@ const Settings: React.FC = () => {
           ))}
           {keys.length === 0 && (
             <div className="text-center p-6 bg-slate-900/50 rounded-lg border border-slate-700/50 border-dashed text-slate-500 italic">
-                No API keys added. The AI features will not work.
+                Belum ada API Key. Fitur AI tidak akan berfungsi.
             </div>
           )}
         </div>
@@ -162,32 +162,32 @@ const Settings: React.FC = () => {
               <svg className="w-6 h-6 mr-2 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
               </svg>
-              AI Configuration
+              Konfigurasi AI
             </h3>
             
             <div className="space-y-4">
                 <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-2">Default Home Agent</label>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">Agent Beranda Default</label>
                     <select 
                         value={defaultAgentId} 
                         onChange={(e) => setDefaultAgentId(e.target.value)}
                         className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
                     >
-                        <option value="">-- Show Agent Directory --</option>
+                        <option value="">-- Tampilkan Direktori Agent --</option>
                         {agents.map(a => (
                             <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
                         ))}
                     </select>
-                    <p className="text-xs text-slate-500 mt-1">If selected, the home page will directly show this agent's chat interface.</p>
+                    <p className="text-xs text-slate-500 mt-1">Jika dipilih, halaman utama akan langsung menampilkan chat agent ini.</p>
                 </div>
 
                 <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-2">Model Version</label>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">Versi Model</label>
                     <div className="space-y-2">
                     {[
-                        { id: GeminiModel.FLASH_3, label: 'Gemini 3 Flash', desc: 'Fastest' },
-                        { id: GeminiModel.FLASH_2_5, label: 'Gemini 2.5 Flash', desc: 'Balanced' },
-                        { id: GeminiModel.PRO_3, label: 'Gemini 3 Pro', desc: 'Complex' },
+                        { id: GeminiModel.FLASH_3, label: 'Gemini 3 Flash', desc: 'Tercepat' },
+                        { id: GeminiModel.FLASH_2_5, label: 'Gemini 2.5 Flash', desc: 'Seimbang' },
+                        { id: GeminiModel.PRO_3, label: 'Gemini 3 Pro', desc: 'Kompleks' },
                     ].map((model) => (
                         <button
                         key={model.id}
@@ -213,17 +213,17 @@ const Settings: React.FC = () => {
               <svg className="w-6 h-6 mr-2 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
-              Image Storage Quality
+              Kualitas Penyimpanan Gambar
             </h3>
             <p className="text-sm text-slate-400 mb-4">
-               Controls quality when saving training images to database. Lower quality saves storage space.
+               Mengontrol kualitas saat menyimpan gambar training ke database. Kualitas rendah menghemat ruang penyimpanan.
             </p>
             <div className="space-y-3">
               {[
-                { val: 0.6, label: 'Low (60%)', desc: 'Best for saving space' },
-                { val: 0.8, label: 'High (80%)', desc: 'Balanced (Recommended)' },
-                { val: 0.9, label: 'Very High (90%)', desc: 'High detail' },
-                { val: 1.0, label: 'Original (100%)', desc: 'No compression (Max Size)' },
+                { val: 0.6, label: 'Rendah (60%)', desc: 'Hemat ruang' },
+                { val: 0.8, label: 'Tinggi (80%)', desc: 'Seimbang (Disarankan)' },
+                { val: 0.9, label: 'Sangat Tinggi (90%)', desc: 'Detail tinggi' },
+                { val: 1.0, label: 'Asli (100%)', desc: 'Tanpa kompresi (Ukuran Besar)' },
               ].map((opt) => (
                 <button
                   key={opt.val}
@@ -259,14 +259,14 @@ const Settings: React.FC = () => {
                 <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                Configuration Saved!
+                Tersimpan!
               </>
           ) : (
               <>
                  <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                  </svg>
-                 Save Settings
+                 Simpan Pengaturan
               </>
           )}
         </button>

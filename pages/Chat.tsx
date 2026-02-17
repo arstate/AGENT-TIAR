@@ -247,7 +247,7 @@ const Chat: React.FC = () => {
 
   const handleDeleteSession = async () => {
       if (!selectedAgentId || !selectedSessionId) return;
-      if (confirm("Are you sure you want to delete this entire chat history?")) {
+      if (confirm("Apakah Anda yakin ingin menghapus seluruh riwayat chat ini?")) {
           await remove(ref(db, `chats/${selectedAgentId}/${selectedSessionId}`));
           setSelectedSessionId(null);
           // Don't necessarily close chat, maybe show empty or go back? 
@@ -284,7 +284,7 @@ const Chat: React.FC = () => {
     let currentSessionId = selectedSessionId;
     if (!currentSessionId) {
         const newRef = push(ref(db, `chats/${selectedAgentId}`));
-        await set(newRef, { name: "New Chat", createdAt: serverTimestamp() });
+        await set(newRef, { name: "Chat Baru", createdAt: serverTimestamp() });
         currentSessionId = newRef.key;
         setSelectedSessionId(currentSessionId);
     }
@@ -301,7 +301,7 @@ const Chat: React.FC = () => {
     let filesForGemini: File[] = [];
 
     if (rawFilesToSend.length > 0) {
-        setCompressionStatus('Processing files...');
+        setCompressionStatus('Memproses file...');
         try {
             // Compress images, skip PDFs
             const compressedFilesPromise = rawFilesToSend.map(f => compressImage(f));
@@ -314,7 +314,7 @@ const Chat: React.FC = () => {
             base64Images = await Promise.all(imagePromises);
         } catch (e) {
             console.error("File processing error", e);
-            setCompressionStatus('Error processing files.');
+            setCompressionStatus('Gagal memproses file.');
             setIsTyping(false);
             return;
         }
@@ -338,7 +338,7 @@ const Chat: React.FC = () => {
     if (!settings || !settings.apiKeys || settings.apiKeys.length === 0) {
         await push(ref(db, `chats/${selectedAgentId}/${currentSessionId}/messages`), {
             role: 'model',
-            text: "Error: Please configure API Keys in Settings first.",
+            text: "Error: Mohon konfigurasi API Key di Pengaturan terlebih dahulu.",
             timestamp: serverTimestamp()
         });
         setIsTyping(false);
@@ -384,6 +384,33 @@ const Chat: React.FC = () => {
     ${generalContextList || "No general information available."}
     `;
 
+    // TRANSLATED SYSTEM INSTRUCTION
+    const systemInstruction = `
+        Anda adalah Agen AI dengan peran berikut: ${currentAgent.role}.
+        ${currentAgent.personality ? `Kepribadian Anda adalah: ${currentAgent.personality}` : ''}
+        
+        Gunakan BAHASA INDONESIA yang baik, sopan, dan profesional dalam setiap jawaban.
+        
+        Anda memiliki akses ke Basis Pengetahuan (Knowledge Base) di bawah ini. 
+        Ini berisi fakta tekstual dan daftar GAMBAR TERSEDIA dengan ID.
+
+        --- KNOWLEDGE BASE START ---
+        ${contextString}
+        --- KNOWLEDGE BASE END ---
+        
+        *** INSTRUKSI PENTING UNTUK MENGIRIM GAMBAR ***
+        Ketika pengguna meminta foto (contoh: "lihat dapurnya", "minta foto kamar mandi", "brosur mana"):
+        1. CARI di daftar 'AVAILABLE IMAGES' dalam Knowledge Base.
+        2. COCOKKAN permintaan pengguna dengan 'Filename' atau 'Description'.
+           - Jika user minta "Kamar Mandi", cari file bernama "bathroom.jpg" atau deskripsi yang menyebut "shower", "toilet", "kamar mandi".
+           - Jika user minta "Promo", cari "promo.jpg" atau "flyer".
+        3. JIKA COCOK: Keluarkan tag [[SEND_IMAGE: <image_id>]].
+        4. JIKA TIDAK COCOK: Jangan kirim gambar acak. Jelaskan saja bahwa Anda tidak memiliki foto spesifik tersebut.
+        5. Anda bisa mengirim beberapa gambar jika relevan (contoh [[SEND_IMAGE: id1]] [[SEND_IMAGE: id2]]).
+        
+        Tetap pada karakter. Jawab dengan ringkas dan membantu, seperti admin profesional di WhatsApp.
+    `;
+
     const historyForAi = messages.map(m => {
         const parts: any[] = [{ text: m.text }];
         if (m.images) {
@@ -404,8 +431,8 @@ const Chat: React.FC = () => {
     try {
         let responseText = await gemini.chatWithAgent(
             model,
-            currentAgent.role + (currentAgent.personality ? ` Personality: ${currentAgent.personality}` : ''),
-            contextString,
+            systemInstruction, // Pass the new system instruction directly
+            "", // Context is now embedded in system instruction for better adherence
             historyForAi,
             userMsgText,
             filesForGemini
@@ -451,7 +478,7 @@ const Chat: React.FC = () => {
         console.error(error);
         await push(ref(db, `chats/${selectedAgentId}/${currentSessionId}/messages`), {
             role: 'model',
-            text: "Error: Failed to connect to AI Agent.",
+            text: "Error: Gagal terhubung ke Agent AI.",
             timestamp: serverTimestamp()
         });
     } finally {
@@ -483,7 +510,7 @@ const Chat: React.FC = () => {
       <div className={`md:w-1/4 w-full bg-slate-800 rounded-xl border border-slate-700 overflow-hidden flex flex-col shadow-xl ${showMobileChat ? 'hidden md:flex' : 'flex'}`}>
         <div className="p-4 bg-slate-700/50 border-b border-slate-700">
             <h3 className="font-bold text-white flex items-center gap-2">
-                 Agents History
+                 Riwayat Agent
             </h3>
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-2">
@@ -507,12 +534,12 @@ const Chat: React.FC = () => {
                     {selectedAgentId === agent.id && (
                         <div className="ml-6 border-l-2 border-slate-600 pl-2 space-y-1 my-2">
                              <div className="flex justify-between items-center px-2 mb-2">
-                                <span className="text-[10px] text-slate-500 uppercase tracking-widest">Chats</span>
+                                <span className="text-[10px] text-slate-500 uppercase tracking-widest">Chat</span>
                                 <button onClick={(e) => { e.stopPropagation(); setIsCreatingSession(!isCreatingSession); }} className="text-blue-400 hover:text-white"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4"/></svg></button>
                             </div>
                             {isCreatingSession && (
                                 <div className="flex gap-1 p-1">
-                                    <input autoFocus className="bg-slate-900 text-xs text-white p-1 rounded w-full border border-slate-600" placeholder="Chat Name..." value={newSessionName} onChange={e => setNewSessionName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCreateSession()} />
+                                    <input autoFocus className="bg-slate-900 text-xs text-white p-1 rounded w-full border border-slate-600" placeholder="Nama Chat..." value={newSessionName} onChange={e => setNewSessionName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCreateSession()} />
                                     <button onClick={handleCreateSession} className="text-green-400 text-xs"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7"/></svg></button>
                                 </div>
                             )}
@@ -619,10 +646,10 @@ const Chat: React.FC = () => {
             )}
             <div className="flex items-end space-x-2 bg-[#2a3942] rounded-2xl p-2 border border-slate-700/50 focus-within:border-slate-500 transition-colors">
                 <input type="file" multiple accept="image/*, application/pdf" ref={fileInputRef} className="hidden" onChange={handleFileSelect} />
-                <button onClick={() => fileInputRef.current?.click()} className="text-[#8696a0] p-2 hover:bg-[#374248] rounded-full transition-colors mb-0.5" title="Attach Image or PDF">
+                <button onClick={() => fileInputRef.current?.click()} className="text-[#8696a0] p-2 hover:bg-[#374248] rounded-full transition-colors mb-0.5" title="Lampirkan Gambar atau PDF">
                     <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path transform="rotate(-45, 12, 12)" d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 015 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 005 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>
                 </button>
-                <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder={activeAgent ? "Type a message..." : "Select an agent first"} disabled={!activeAgent || isTyping} className="flex-1 bg-transparent text-white px-2 py-3 outline-none placeholder-[#8696a0] min-h-[44px] max-h-32" autoComplete="off" />
+                <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder={activeAgent ? "Ketik pesan..." : "Pilih agent dulu"} disabled={!activeAgent || isTyping} className="flex-1 bg-transparent text-white px-2 py-3 outline-none placeholder-[#8696a0] min-h-[44px] max-h-32" autoComplete="off" />
                 <button onClick={handleSend} disabled={(!input.trim() && chatFiles.length === 0) || !activeAgent || isTyping} className={`p-2 rounded-full transition-all mb-0.5 ${input.trim() || chatFiles.length > 0 ? 'text-[#00a884] bg-[#00a884]/10 hover:bg-[#00a884]/20' : 'text-[#8696a0]'}`}><svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path></svg></button>
             </div>
         </div>

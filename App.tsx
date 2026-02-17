@@ -1,4 +1,5 @@
-import React from 'react';
+
+import React, { useEffect } from 'react';
 import { HashRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import Layout from './components/Layout';
 import Chat from './pages/Chat';
@@ -8,6 +9,7 @@ import Settings from './pages/Settings';
 import AdminLogin from './pages/AdminLogin';
 import PublicChat from './pages/PublicChat';
 import Home from './pages/Home';
+import Inbox from './pages/Inbox';
 
 // Auth Guard Component
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -38,6 +40,7 @@ const App: React.FC = () => {
 
         {/* Protected Dashboard Routes */}
         <Route path="/admin/dashboard" element={<RequireAuth><Chat /></RequireAuth>} />
+        <Route path="/admin/inbox" element={<RequireAuth><Inbox /></RequireAuth>} />
         <Route path="/admin/knowledge" element={<RequireAuth><Knowledge /></RequireAuth>} />
         <Route path="/admin/agents" element={<RequireAuth><Agents /></RequireAuth>} />
         <Route path="/admin/settings" element={<RequireAuth><Settings /></RequireAuth>} />

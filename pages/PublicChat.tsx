@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { db } from '../services/firebase';
-import { ref, onValue, push, set, serverTimestamp, get, child } from 'firebase/database';
+import { ref, onValue, push, set, serverTimestamp, get, child, update } from 'firebase/database';
 import { GeminiService, fileToGenerativePart } from '../services/geminiService';
 import { Agent, GeminiModel, KnowledgeItem, AppSettings, ChatMessage } from '../types';
 
@@ -64,6 +64,12 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
     // Device ID (Persistent Session)
     const [deviceId, setDeviceId] = useState<string | null>(null);
     
+    // Registration State
+    const [isRegistered, setIsRegistered] = useState(false);
+    const [regName, setRegName] = useState('');
+    const [regPhone, setRegPhone] = useState('');
+    const [checkingReg, setCheckingReg] = useState(true);
+
     const bottomRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [loadingAgent, setLoadingAgent] = useState(true);
@@ -91,7 +97,6 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
                 
                 if (snap.exists()) {
                     const data = snap.val();
-                    // If accessed via Prop (Home), we trust it. If via URL, check public flag.
                     if (data.isPublic || agentIdProp) {
                         setAgent({ id: effectiveAgentId, ...data });
                         setLoadingAgent(false);
@@ -125,6 +130,23 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
         findAgent();
     }, [effectiveAgentId, agentIdProp]);
 
+    // Check Registration Status
+    useEffect(() => {
+        if (!agent || !deviceId) return;
+        
+        const checkRegistration = async () => {
+            const userRef = ref(db, `public_chats/${agent.id}/${deviceId}/userInfo`);
+            const snap = await get(userRef);
+            if (snap.exists()) {
+                setIsRegistered(true);
+            } else {
+                setIsRegistered(false);
+            }
+            setCheckingReg(false);
+        };
+        checkRegistration();
+    }, [agent, deviceId]);
+
     // Load Knowledge (Requires resolved Agent ID)
     useEffect(() => {
         if (!agent) return;
@@ -139,7 +161,6 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
     }, [agent]);
 
     // Load Messages based on Device ID
-    // Path: public_chats / {agentId} / {deviceId} / messages
     useEffect(() => {
         if (!agent || !deviceId) return;
         
@@ -159,6 +180,20 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
     }, [agent, deviceId]);
 
     useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isTyping]);
+
+    const handleRegister = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!regName.trim() || !regPhone.trim() || !agent || !deviceId) return;
+
+        await update(ref(db, `public_chats/${agent.id}/${deviceId}`), {
+            userInfo: {
+                name: regName,
+                phone: regPhone
+            },
+            lastActive: serverTimestamp()
+        });
+        setIsRegistered(true);
+    };
 
     const handleSend = async () => {
         if ((!input.trim() && chatFiles.length === 0) || !agent || !deviceId) return;
@@ -191,23 +226,17 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
             timestamp: serverTimestamp()
         });
 
-        // Ensure parent node exists with metadata if it's new
-        const chatMetaRef = ref(db, `public_chats/${agent.id}/${deviceId}`);
-        const metaSnap = await get(chatMetaRef);
-        if (!metaSnap.exists()) {
-             await set(chatMetaRef, {
-                 createdAt: serverTimestamp(),
-                 lastActive: serverTimestamp(),
-                 deviceType: 'web'
-             });
-        }
+        // Update last active
+        await update(ref(db, `public_chats/${agent.id}/${deviceId}`), {
+            lastActive: serverTimestamp()
+        });
 
         const settingsSnap = await get(child(ref(db), 'settings'));
         const settings: AppSettings = settingsSnap.val();
 
         if (!settings || !settings.apiKeys) {
              await push(ref(db, chatPath), {
-                role: 'model', text: "System Error: Service unavailable.", timestamp: serverTimestamp()
+                role: 'model', text: "Error Sistem: Layanan tidak tersedia.", timestamp: serverTimestamp()
             });
             setIsTyping(false);
             return;
@@ -243,11 +272,35 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
 
         const gemini = new GeminiService(settings.apiKeys);
 
+        // TRANSLATED SYSTEM INSTRUCTION
+        const systemInstruction = `
+            Anda adalah Agen AI dengan peran berikut: ${agent.role}.
+            ${agent.personality ? `Kepribadian Anda adalah: ${agent.personality}` : ''}
+            
+            Gunakan BAHASA INDONESIA yang baik, sopan, dan profesional dalam setiap jawaban.
+            
+            Anda memiliki akses ke Basis Pengetahuan (Knowledge Base) di bawah ini. 
+            Ini berisi fakta tekstual dan daftar GAMBAR TERSEDIA dengan ID.
+
+            --- KNOWLEDGE BASE START ---
+            ${contextString}
+            --- KNOWLEDGE BASE END ---
+            
+            *** INSTRUKSI PENTING UNTUK MENGIRIM GAMBAR ***
+            Ketika pengguna meminta foto (contoh: "lihat dapurnya", "minta foto kamar mandi", "brosur mana"):
+            1. CARI di daftar 'AVAILABLE IMAGES' dalam Knowledge Base.
+            2. COCOKKAN permintaan pengguna dengan 'Filename' atau 'Description'.
+            3. JIKA COCOK: Keluarkan tag [[SEND_IMAGE: <image_id>]].
+            4. JIKA TIDAK COCOK: Jangan kirim gambar acak. Jelaskan saja bahwa Anda tidak memiliki foto spesifik tersebut.
+            
+            Tetap pada karakter. Jawab dengan ringkas dan membantu.
+        `;
+
         try {
             let responseText = await gemini.chatWithAgent(
                 settings.selectedModel || GeminiModel.FLASH_3,
-                agent.role + (agent.personality ? ` Personality: ${agent.personality}` : ''),
-                contextString,
+                systemInstruction,
+                "", // Context in system instruction
                 history,
                 userMsgText,
                 filesForGemini
@@ -266,6 +319,10 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
             }
             responseText = responseText.replace(sendImageRegex, '').trim();
 
+            if (!responseText && modelImagesToSend.length > 0) {
+                responseText = "Berikut fotonya kak:"; 
+            }
+
             await push(ref(db, chatPath), {
                 role: 'model',
                 text: responseText,
@@ -275,14 +332,14 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
         } catch (e) {
             console.error(e);
              await push(ref(db, chatPath), {
-                role: 'model', text: "Sorry, I am having trouble connecting right now.", timestamp: serverTimestamp()
+                role: 'model', text: "Maaf, terjadi kesalahan saat menghubungkan ke server.", timestamp: serverTimestamp()
             });
         } finally {
             setIsTyping(false);
         }
     };
 
-    if (loadingAgent) {
+    if (loadingAgent || checkingReg) {
          return (
             <div className="min-h-screen bg-slate-900 flex items-center justify-center">
                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
@@ -294,8 +351,67 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
         return (
             <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center text-slate-400 p-4 text-center">
                 <svg className="w-16 h-16 mb-4 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-                <h1 className="text-2xl font-bold text-white mb-2">Agent Not Found</h1>
-                <p>This agent is either offline or does not exist.</p>
+                <h1 className="text-2xl font-bold text-white mb-2">Agent Tidak Ditemukan</h1>
+                <p>Agent ini sedang offline atau tidak tersedia.</p>
+            </div>
+        );
+    }
+
+    // REGISTRATION FORM OVERLAY
+    if (!isRegistered) {
+        return (
+            <div className="fixed inset-0 bg-[#0f172a] flex items-center justify-center p-4 z-50">
+                <div className="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-2xl max-w-md w-full relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-emerald-500"></div>
+                    <div className="text-center mb-6">
+                        <div className={`w-16 h-16 rounded-full mx-auto flex items-center justify-center text-white font-bold text-2xl shadow-lg mb-4 ${agent.avatar || 'bg-blue-600'}`}>
+                            {agent.name[0]}
+                        </div>
+                        <h2 className="text-xl font-bold text-white">Selamat Datang di {agent.name}</h2>
+                        <p className="text-slate-400 text-sm mt-1">Silakan perkenalkan diri Anda untuk mulai mengobrol.</p>
+                    </div>
+                    
+                    <form onSubmit={handleRegister} className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Nama Anda</label>
+                            <input 
+                                type="text" 
+                                required
+                                value={regName}
+                                onChange={e => setRegName(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:border-blue-500 outline-none"
+                                placeholder="Contoh: Budi Santoso"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-400 mb-1 uppercase tracking-wider">Nomor WhatsApp</label>
+                            <input 
+                                type="tel" 
+                                required
+                                value={regPhone}
+                                onChange={e => setRegPhone(e.target.value)}
+                                className="w-full bg-slate-900 border border-slate-600 rounded-lg px-4 py-3 text-white focus:border-blue-500 outline-none"
+                                placeholder="Contoh: 08123456789"
+                            />
+                        </div>
+                        
+                        <div className="bg-blue-900/20 p-3 rounded-lg border border-blue-500/20 flex gap-3 items-start">
+                            <svg className="w-5 h-5 text-blue-400 shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                            <p className="text-xs text-blue-200">
+                                <span className="font-bold">Pemberitahuan Privasi:</span> Nomor HP tidak akan tersebar. Nomor HP hanya untuk Admin menghubungi Anda via WhatsApp jika diperlukan.
+                            </p>
+                        </div>
+
+                        <button 
+                            type="submit" 
+                            className="w-full bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-500 hover:to-emerald-500 text-white font-bold py-3 rounded-xl shadow-lg transform transition-transform hover:scale-[1.02]"
+                        >
+                            Mulai Chat
+                        </button>
+                    </form>
+                </div>
             </div>
         );
     }
@@ -322,7 +438,7 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-900" style={{ backgroundImage: "radial-gradient(#1e293b 1px, transparent 1px)", backgroundSize: "20px 20px" }}>
                 {messages.length === 0 && (
                     <div className="text-center py-10 opacity-50">
-                        <p className="text-slate-400">Start a conversation with {agent.name}!</p>
+                        <p className="text-slate-400">Mulai percakapan dengan {agent.name}!</p>
                     </div>
                 )}
                 {messages.map((msg, i) => (
@@ -373,7 +489,7 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                        placeholder="Type a message..."
+                        placeholder="Ketik pesan..."
                         className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none"
                     />
                     <button 

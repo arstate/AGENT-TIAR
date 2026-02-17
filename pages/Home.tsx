@@ -69,8 +69,8 @@ const Home: React.FC = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
              </svg>
         </div>
-        <h1 className="text-xl font-bold text-slate-400">No Agents Online</h1>
-        <p className="text-sm mt-2">Please check back later.</p>
+        <h1 className="text-xl font-bold text-slate-400">Tidak Ada Agent Online</h1>
+        <p className="text-sm mt-2">Silakan cek kembali nanti.</p>
       </div>
     );
   }
@@ -80,9 +80,9 @@ const Home: React.FC = () => {
       <div className="max-w-6xl mx-auto">
         <header className="mb-12 text-center">
            <h1 className="text-4xl md:text-5xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-emerald-400 tracking-tight mb-4">
-             AI Agents Directory
+             Direktori Agent AI
            </h1>
-           <p className="text-slate-400 text-lg">Chat with our specialized AI assistants available online.</p>
+           <p className="text-slate-400 text-lg">Mengobrol dengan asisten AI khusus kami yang tersedia online.</p>
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -109,7 +109,7 @@ const Home: React.FC = () => {
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
                       </span>
-                      <span className="text-xs text-green-400 font-medium">Online Now</span>
+                      <span className="text-xs text-green-400 font-medium">Online Sekarang</span>
                    </div>
                 </div>
               </div>
@@ -119,14 +119,14 @@ const Home: React.FC = () => {
               </p>
 
               <div className="w-full py-3 bg-slate-900/50 group-hover:bg-blue-600 rounded-xl text-center text-sm font-bold text-slate-300 group-hover:text-white transition-colors">
-                Start Conversation
+                Mulai Percakapan
               </div>
             </Link>
           ))}
         </div>
         
         <footer className="mt-20 text-center text-slate-600 text-sm">
-            &copy; {new Date().getFullYear()} AgenAI Platform. All rights reserved.
+            &copy; {new Date().getFullYear()} Platform AgenAI. Hak cipta dilindungi undang-undang.
         </footer>
       </div>
     </div>

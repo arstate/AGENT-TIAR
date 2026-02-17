@@ -199,7 +199,7 @@ const Knowledge: React.FC = () => {
 
           setIsProcessingQueue(true);
           setCurrentQueueId(pending.id);
-          setStatus(`Processing queue for Agent: ${pending.agentName}...`);
+          setStatus(`Memproses antrean untuk Agent: ${pending.agentName}...`);
 
           try {
              // Mark as processing
@@ -272,7 +272,7 @@ const Knowledge: React.FC = () => {
   const processTrainingItem = async (item: TrainingQueueItem) => {
     const settings = await getSettings();
     if (!settings || !settings.apiKeys || settings.apiKeys.length === 0) {
-        throw new Error("No API Keys configured.");
+        throw new Error("API Key belum dikonfigurasi.");
     }
 
     const gemini = new GeminiService(settings.apiKeys);
@@ -288,7 +288,7 @@ const Knowledge: React.FC = () => {
     for (const file of item.files) {
         if (file.type === 'application/pdf') {
             if (item.saveImages) {
-                setStatus(`Converting PDF: ${file.name}...`);
+                setStatus(`Mengkonversi PDF: ${file.name}...`);
                 const pageImages = await convertPdfToImages(file);
                 processedFiles = [...processedFiles, ...pageImages];
             } else {
@@ -300,8 +300,8 @@ const Knowledge: React.FC = () => {
     }
 
     // 2. ANALYZE
-    setStatus(`Analyzing content for ${item.agentName}...`);
-    const prompt = `Perform a deep analysis. Extract facts and business logic. Output points.\n${item.textInput ? `User Context: ${item.textInput}` : ''}`;
+    setStatus(`Menganalisa konten untuk ${item.agentName}...`);
+    const prompt = `Lakukan analisa mendalam. Ekstrak fakta dan logika bisnis. Keluarkan poin-poin penting dalam Bahasa Indonesia.\n${item.textInput ? `Konteks Pengguna: ${item.textInput}` : ''}`;
     const summary = await gemini.analyzeContent(model, prompt, processedFiles);
     
     setAnalysisResult({ agent: item.agentName, result: summary });
@@ -315,14 +315,14 @@ const Knowledge: React.FC = () => {
         if (imageFiles.length > 0) {
             for (let i=0; i<imageFiles.length; i++) {
                 const img = imageFiles[i];
-                setStatus(`Saving image ${i+1}/${imageFiles.length}...`);
+                setStatus(`Menyimpan gambar ${i+1}/${imageFiles.length}...`);
                 // Only compress and save base64 if saveImages is true. Pass specific quality.
                 const b64 = item.saveImages ? await compressImageForDb(img, quality) : null;
                 
                 await push(ref(db, `knowledge/${item.agentId}`), {
                     type: 'image',
                     originalName: img.name,
-                    contentSummary: `[Image File: ${img.name}]\n${summary}`,
+                    contentSummary: `[File Gambar: ${img.name}]\n${summary}`,
                     rawContent: item.textInput,
                     imageData: b64, 
                     timestamp: Date.now()
@@ -333,7 +333,7 @@ const Knowledge: React.FC = () => {
         if (otherFiles.length > 0 || item.textInput.trim() || (imageFiles.length === 0 && !item.saveImages)) {
                 await push(ref(db, `knowledge/${item.agentId}`), {
                 type: otherFiles.length > 0 ? 'file' : 'text',
-                originalName: otherFiles.length > 0 ? otherFiles.map(f => f.name).join(', ') : 'Text Input',
+                originalName: otherFiles.length > 0 ? otherFiles.map(f => f.name).join(', ') : 'Input Teks',
                 contentSummary: summary,
                 rawContent: item.textInput,
                 timestamp: Date.now()
@@ -341,12 +341,12 @@ const Knowledge: React.FC = () => {
         }
     } else {
         // Combined Mode
-        setStatus(`Compressing composite images...`);
+        setStatus(`Mengompres gambar gabungan...`);
         const allImages = item.saveImages ? await Promise.all(imageFiles.map(img => compressImageForDb(img, quality))) : [];
         
         await push(ref(db, `knowledge/${item.agentId}`), {
             type: 'composite',
-            originalName: item.files.length > 0 ? `${item.files.length} Files (${item.files[0].name}...)` : 'Combined Entry',
+            originalName: item.files.length > 0 ? `${item.files.length} File (${item.files[0].name}...)` : 'Entri Gabungan',
             contentSummary: summary,
             rawContent: item.textInput,
             images: allImages.filter(b => !!b),
@@ -371,14 +371,14 @@ const Knowledge: React.FC = () => {
 
   const handleStopRetrain = () => {
       stopRetrainRef.current = true;
-      setStatus("Stopping...");
+      setStatus("Menghentikan...");
   };
 
   const executeRetrain = async (resume: boolean = false) => {
     setShowRetrainModal(false); 
     stopRetrainRef.current = false;
     setIsProcessingQueue(true);
-    setStatus("Starting Re-train...");
+    setStatus("Memulai Pelatihan Ulang...");
     
     const targetItems = selectedItemIds.length > 0 
         ? knowledgeList.filter(k => selectedItemIds.includes(k.id)) 
@@ -412,13 +412,13 @@ const Knowledge: React.FC = () => {
 
         for (let i = startIndex; i < targetItems.length; i++) {
             if (stopRetrainRef.current) {
-                setStatus("Paused.");
+                setStatus("Dijeda.");
                 setIsProcessingQueue(false);
                 return; 
             }
 
             const item = targetItems[i];
-            setStatus(`Re-analyzing ${i + 1}/${targetItems.length}: ${item.originalName || 'Item'}...`);
+            setStatus(`Analisa Ulang ${i + 1}/${targetItems.length}: ${item.originalName || 'Item'}...`);
 
             let filesToAnalyze: File[] = [];
             if (item.imageData) {
@@ -434,9 +434,9 @@ const Knowledge: React.FC = () => {
                  }
             }
 
-            const prompt = `Re-analyze entry. User Context: "${item.rawContent || ""}"`;
+            const prompt = `Analisa ulang entri ini. Konteks Pengguna: "${item.rawContent || ""}". Keluarkan dalam Bahasa Indonesia.`;
             const newSummary = await gemini.analyzeContent(model, prompt, filesToAnalyze);
-            const finalSummary = (item.type === 'image' && item.originalName) ? `[Image File: ${item.originalName}]\n${newSummary}` : newSummary;
+            const finalSummary = (item.type === 'image' && item.originalName) ? `[File Gambar: ${item.originalName}]\n${newSummary}` : newSummary;
 
             await update(ref(db, `knowledge/${selectedAgentId}/${item.id}`), { contentSummary: finalSummary });
             await update(ref(db, `trainingProgress/${selectedAgentId}`), {
@@ -447,7 +447,7 @@ const Knowledge: React.FC = () => {
             });
         }
         
-        setStatus('Complete!');
+        setStatus('Selesai!');
         await remove(ref(db, `trainingProgress/${selectedAgentId}`));
         setSelectedItemIds([]); 
     } catch (error: any) {
@@ -474,10 +474,10 @@ const Knowledge: React.FC = () => {
       {showRetrainModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
             <div className="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl max-w-md w-full p-6">
-                 <h3 className="text-xl font-bold text-white mb-4">Re-Train Agent</h3>
+                 <h3 className="text-xl font-bold text-white mb-4">Latih Ulang Agent</h3>
                  <div className="flex justify-end gap-2">
-                    <button onClick={() => setShowRetrainModal(false)} className="px-4 py-2 text-slate-300">Cancel</button>
-                    <button onClick={() => executeRetrain(false)} className="px-4 py-2 bg-blue-600 text-white rounded">Start</button>
+                    <button onClick={() => setShowRetrainModal(false)} className="px-4 py-2 text-slate-300">Batal</button>
+                    <button onClick={() => executeRetrain(false)} className="px-4 py-2 bg-blue-600 text-white rounded">Mulai</button>
                  </div>
             </div>
         </div>
@@ -485,11 +485,11 @@ const Knowledge: React.FC = () => {
        {showDeleteModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
             <div className="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl max-w-sm w-full p-6">
-                <h3 className="text-xl font-bold text-red-500 mb-2">Delete Items?</h3>
-                <p className="text-slate-300 mb-4">Are you sure you want to delete {selectedItemIds.length} items?</p>
+                <h3 className="text-xl font-bold text-red-500 mb-2">Hapus Item?</h3>
+                <p className="text-slate-300 mb-4">Apakah Anda yakin ingin menghapus {selectedItemIds.length} item?</p>
                 <div className="flex justify-end gap-2">
-                    <button onClick={() => setShowDeleteModal(false)} className="px-4 py-2 text-slate-300">Cancel</button>
-                    <button onClick={confirmBulkDelete} className="px-4 py-2 bg-red-600 text-white rounded">Delete</button>
+                    <button onClick={() => setShowDeleteModal(false)} className="px-4 py-2 text-slate-300">Batal</button>
+                    <button onClick={confirmBulkDelete} className="px-4 py-2 bg-red-600 text-white rounded">Hapus</button>
                 </div>
             </div>
         </div>
@@ -497,8 +497,8 @@ const Knowledge: React.FC = () => {
 
       <div className="border-b border-slate-700 pb-4 flex justify-between items-end">
         <div>
-            <h2 className="text-3xl font-bold text-white">AI Analysis & Training</h2>
-            <p className="text-slate-400 mt-2">Manage datasets, analyze documents, and refine agent memory.</p>
+            <h2 className="text-3xl font-bold text-white">Analisa AI & Training</h2>
+            <p className="text-slate-400 mt-2">Kelola dataset, analisa dokumen, dan pertajam memori agent.</p>
         </div>
         
         {/* Queue Status Widget */}
@@ -506,8 +506,8 @@ const Knowledge: React.FC = () => {
             <div className="bg-slate-800 border border-blue-500/50 rounded-lg p-3 shadow-lg flex items-center gap-3 animate-pulse">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                 <div>
-                    <p className="text-xs text-blue-300 font-bold uppercase tracking-wider">Queue Processing</p>
-                    <p className="text-sm text-white font-medium">{trainingQueue.filter(i => i.status !== 'completed').length} items remaining</p>
+                    <p className="text-xs text-blue-300 font-bold uppercase tracking-wider">Memproses Antrean</p>
+                    <p className="text-sm text-white font-medium">{trainingQueue.filter(i => i.status !== 'completed').length} item tersisa</p>
                 </div>
             </div>
         )}
@@ -515,7 +515,7 @@ const Knowledge: React.FC = () => {
 
       {/* Agent Selector */}
       <div className="bg-slate-800 p-6 rounded-xl border border-slate-700">
-          <label className="block text-sm font-medium text-slate-400 mb-3">Select Agent to Train</label>
+          <label className="block text-sm font-medium text-slate-400 mb-3">Pilih Agent untuk Dilatih</label>
           <div className="flex flex-wrap gap-2">
             {agents.map(agent => (
                 <button
@@ -540,7 +540,7 @@ const Knowledge: React.FC = () => {
             <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
                 <h3 className="text-xl font-bold mb-4 text-white flex items-center">
                     <svg className="w-5 h-5 mr-2 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                    Input New Data
+                    Input Data Baru
                 </h3>
                 
                 {/* Config Toggles */}
@@ -548,12 +548,12 @@ const Knowledge: React.FC = () => {
                     {/* Storage Mode */}
                     <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-700/50">
                          <div className="flex justify-between items-center mb-2">
-                             <span className="text-sm font-medium text-slate-300">Storage Mode</span>
-                             <span className="text-[10px] text-slate-500">{storageMode === 'separate' ? 'Splits PDF pages' : 'Combines all inputs'}</span>
+                             <span className="text-sm font-medium text-slate-300">Mode Penyimpanan</span>
+                             <span className="text-[10px] text-slate-500">{storageMode === 'separate' ? 'Memisahkan halaman PDF' : 'Menggabungkan semua input'}</span>
                          </div>
                          <div className="flex bg-slate-900 rounded p-1 border border-slate-700">
-                            <button onClick={() => setStorageMode('separate')} className={`flex-1 py-1.5 rounded text-xs font-bold ${storageMode === 'separate' ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>Separate</button>
-                            <button onClick={() => setStorageMode('combined')} className={`flex-1 py-1.5 rounded text-xs font-bold ${storageMode === 'combined' ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>Combined</button>
+                            <button onClick={() => setStorageMode('separate')} className={`flex-1 py-1.5 rounded text-xs font-bold ${storageMode === 'separate' ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>Terpisah</button>
+                            <button onClick={() => setStorageMode('combined')} className={`flex-1 py-1.5 rounded text-xs font-bold ${storageMode === 'combined' ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>Gabung</button>
                         </div>
                     </div>
 
@@ -562,8 +562,8 @@ const Knowledge: React.FC = () => {
                          {/* Save to DB Toggle */}
                          <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-700/50 flex flex-col justify-between">
                              <div className="mb-2">
-                                <span className="block text-sm font-medium text-slate-300">Save Files?</span>
-                                <span className="text-[10px] text-slate-500">Save converted images to DB</span>
+                                <span className="block text-sm font-medium text-slate-300">Simpan File?</span>
+                                <span className="text-[10px] text-slate-500">Simpan gambar ke DB</span>
                              </div>
                              <div className="flex items-center">
                                  <button
@@ -572,15 +572,15 @@ const Knowledge: React.FC = () => {
                                 >
                                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${saveImages ? 'translate-x-6' : 'translate-x-1'}`} />
                                 </button>
-                                <span className="ml-2 text-xs font-bold text-white">{saveImages ? 'ON' : 'OFF'}</span>
+                                <span className="ml-2 text-xs font-bold text-white">{saveImages ? 'YA' : 'TDK'}</span>
                              </div>
                          </div>
 
                          {/* Quality Selector - BUTTON GROUP (Better for clicking) */}
                          <div className={`bg-slate-900/60 p-3 rounded-lg border border-slate-700/50 flex flex-col justify-between transition-opacity ${!saveImages ? 'opacity-50 pointer-events-none' : ''}`}>
                              <div className="mb-2">
-                                <span className="block text-sm font-medium text-slate-300">Image Quality</span>
-                                <span className="text-[10px] text-slate-500">{selectedQuality === 1 ? 'No Compression' : `${selectedQuality * 100}% Quality`}</span>
+                                <span className="block text-sm font-medium text-slate-300">Kualitas Gambar</span>
+                                <span className="text-[10px] text-slate-500">{selectedQuality === 1 ? 'Tanpa Kompresi' : `${selectedQuality * 100}% Kualitas`}</span>
                              </div>
                              
                              <div className="grid grid-cols-4 gap-1">
@@ -588,7 +588,7 @@ const Knowledge: React.FC = () => {
                                     { val: 0.6, label: '60%' },
                                     { val: 0.8, label: '80%' },
                                     { val: 0.9, label: '90%' },
-                                    { val: 1.0, label: 'Orig' }
+                                    { val: 1.0, label: 'Asli' }
                                 ].map((opt) => (
                                     <button
                                         key={opt.val}
@@ -613,7 +613,7 @@ const Knowledge: React.FC = () => {
                         <input type="file" multiple accept=".pdf,image/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
                         <div>
                             <svg className="mx-auto h-10 w-10 text-slate-400 mb-2 group-hover:text-blue-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                            <p className="text-sm text-slate-300">Click or Drag PDF / Images</p>
+                            <p className="text-sm text-slate-300">Klik atau Tarik PDF / Gambar</p>
                         </div>
                     </div>
 
@@ -639,10 +639,10 @@ const Knowledge: React.FC = () => {
                     )}
                 </div>
 
-                <textarea value={textInput} onChange={(e) => setTextInput(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none h-32 mb-4" placeholder="Additional Context / Instructions..." />
+                <textarea value={textInput} onChange={(e) => setTextInput(e.target.value)} className="w-full bg-slate-900 border border-slate-700 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none h-32 mb-4" placeholder="Konteks Tambahan / Instruksi..." />
 
                 <button onClick={handleAddToQueue} disabled={!selectedAgentId || (files.length === 0 && !textInput.trim())} className={`w-full py-3 rounded-lg font-bold text-lg flex justify-center items-center transition-all ${!selectedAgentId || (files.length === 0 && !textInput.trim()) ? 'bg-slate-600 cursor-not-allowed' : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white transform hover:scale-[1.02]'}`}>
-                    Add to Training Queue
+                    Tambahkan ke Antrean Training
                 </button>
                 
                 {status && <div className="mt-2 text-center text-xs text-yellow-400 font-mono animate-pulse">{status}</div>}
@@ -652,7 +652,7 @@ const Knowledge: React.FC = () => {
             {analysisResult && (
                 <div className="bg-slate-800 p-6 rounded-xl border border-green-500/50 shadow-lg animate-fade-in-up">
                     <div className="flex justify-between items-center mb-2">
-                        <h3 className="text-lg font-bold text-green-400">Analysis Result</h3>
+                        <h3 className="text-lg font-bold text-green-400">Hasil Analisa</h3>
                         <span className="text-xs bg-slate-900 px-2 py-1 rounded text-slate-400">{analysisResult.agent}</span>
                     </div>
                     <div className="bg-black/30 rounded p-4 text-sm text-slate-200 whitespace-pre-wrap font-mono max-h-60 overflow-y-auto">{analysisResult.result}</div>
@@ -665,12 +665,12 @@ const Knowledge: React.FC = () => {
             <div className="flex justify-between items-center mb-4">
                 <h3 className="text-xl font-bold text-white flex items-center">
                     <svg className="w-5 h-5 mr-2 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253" /></svg>
-                    Knowledge Base {knowledgeList.length > 0 && `(${knowledgeList.length})`}
+                    Basis Pengetahuan {knowledgeList.length > 0 && `(${knowledgeList.length})`}
                 </h3>
                 <div className="flex gap-2">
-                    <button onClick={handleSelectAll} className="text-xs text-blue-400 hover:underline">{selectedItemIds.length === knowledgeList.length ? "Deselect All" : "Select All"}</button>
+                    <button onClick={handleSelectAll} className="text-xs text-blue-400 hover:underline">{selectedItemIds.length === knowledgeList.length ? "Batal Pilih" : "Pilih Semua"}</button>
                     <button onClick={isProcessingQueue ? handleStopRetrain : handleRetrainClick} className={`text-xs px-4 py-2 rounded-lg font-semibold transition-all ${isProcessingQueue ? 'bg-red-600 text-white' : savedProgress ? 'bg-green-600 text-white' : 'bg-slate-700 text-white'}`}>
-                        {savedProgress ? "Resume Retrain" : "Re-Train All"}
+                        {savedProgress ? "Lanjutkan Training" : "Latih Ulang Semua"}
                     </button>
                 </div>
             </div>
@@ -678,17 +678,17 @@ const Knowledge: React.FC = () => {
             {/* Selection Action Bar */}
             {selectedItemIds.length > 0 && (
                 <div className="bg-blue-600 p-3 rounded-lg mb-4 flex justify-between items-center animate-fade-in-up">
-                    <span className="text-sm font-bold text-white">{selectedItemIds.length} items selected</span>
+                    <span className="text-sm font-bold text-white">{selectedItemIds.length} item dipilih</span>
                     <div className="flex gap-2">
-                        <button onClick={handleRetrainClick} className="bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-md text-xs font-bold transition-all">Retrain Selected</button>
-                        <button onClick={handleBulkDelete} className="bg-red-500 hover:bg-red-400 text-white px-3 py-1.5 rounded-md text-xs font-bold transition-all">Delete Selected</button>
+                        <button onClick={handleRetrainClick} className="bg-white/20 hover:bg-white/30 text-white px-3 py-1.5 rounded-md text-xs font-bold transition-all">Latih Ulang Terpilih</button>
+                        <button onClick={handleBulkDelete} className="bg-red-500 hover:bg-red-400 text-white px-3 py-1.5 rounded-md text-xs font-bold transition-all">Hapus Terpilih</button>
                     </div>
                 </div>
             )}
             
             <div className="flex-1 overflow-y-auto pr-2 space-y-4 max-h-[700px] scrollbar-thin">
                 {knowledgeList.length === 0 ? (
-                    <div className="text-slate-500 text-center py-20 border border-slate-700 rounded-xl border-dashed">Agent memory is empty.</div>
+                    <div className="text-slate-500 text-center py-20 border border-slate-700 rounded-xl border-dashed">Memori agent kosong.</div>
                 ) : (
                     knowledgeList.map(item => (
                         <div key={item.id} onClick={() => toggleSelection(item.id)} className={`bg-slate-800 p-4 rounded-lg border transition-all cursor-pointer relative group ${selectedItemIds.includes(item.id) ? 'border-blue-500 bg-blue-500/5' : 'border-slate-700 hover:border-slate-500'}`}>
@@ -704,7 +704,7 @@ const Knowledge: React.FC = () => {
                                     </span>
                                     <span className="text-xs text-slate-500">{new Date(item.timestamp).toLocaleDateString()}</span>
                                 </div>
-                                <h4 className="font-semibold text-slate-200 mb-1 truncate">{item.originalName || 'Knowledge Entry'}</h4>
+                                <h4 className="font-semibold text-slate-200 mb-1 truncate">{item.originalName || 'Entri Pengetahuan'}</h4>
                                 <p className="text-sm text-slate-400 line-clamp-2 bg-slate-900/30 p-2 rounded">{item.contentSummary}</p>
                                 
                                 <div className="mt-2 flex gap-2">

@@ -93,7 +93,7 @@ const Agents: React.FC = () => {
   };
 
   const deleteAgent = async (id: string) => {
-    if (confirm('Are you sure you want to delete this agent?')) {
+    if (confirm('Apakah Anda yakin ingin menghapus agent ini?')) {
       await remove(ref(db, `agents/${id}`));
       if (editingId === id) {
         resetForm();
@@ -106,14 +106,14 @@ const Agents: React.FC = () => {
       const linkId = agent.slug || agent.id;
       const url = `${window.location.origin}/#/chat/${linkId}`;
       navigator.clipboard.writeText(url);
-      alert("Link copied: " + url);
+      alert("Link disalin: " + url);
   };
 
   return (
     <div className="space-y-6">
        <div className="border-b border-slate-700 pb-4">
-        <h2 className="text-3xl font-bold text-white">AI Agents Team</h2>
-        <p className="text-slate-400 mt-2">Create and manage specialized agents.</p>
+        <h2 className="text-3xl font-bold text-white">Tim Agent AI</h2>
+        <p className="text-slate-400 mt-2">Buat dan kelola agent spesialis Anda.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -121,39 +121,39 @@ const Agents: React.FC = () => {
         <div className="lg:col-span-1">
           <div className={`p-6 rounded-xl border sticky top-6 transition-colors ${editingId ? 'bg-blue-900/20 border-blue-500' : 'bg-slate-800 border-slate-700'}`}>
             <h3 className="text-lg font-bold mb-4 text-white flex items-center">
-              {editingId ? 'Edit Agent' : 'Create New Agent'}
+              {editingId ? 'Edit Agent' : 'Buat Agent Baru'}
             </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               {/* Basic Info */}
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Agent Name</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Nama Agent</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none"
-                  placeholder="e.g., Support Bot"
+                  placeholder="Contoh: CS Budi"
                   required
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Role / Job Description</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Peran / Pekerjaan</label>
                 <input
                   type="text"
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none"
-                  placeholder="e.g., Expert Javascript Developer"
+                  placeholder="Contoh: Ahli Penjualan Properti"
                   required
                 />
               </div>
               <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1">Personality</label>
+                <label className="block text-xs font-medium text-slate-400 mb-1">Kepribadian</label>
                 <textarea
                   value={personality}
                   onChange={(e) => setPersonality(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:border-blue-500 outline-none h-24 resize-none"
-                  placeholder="e.g., Friendly, concise..."
+                  placeholder="Contoh: Ramah, santai, persuasif..."
                 />
               </div>
 
@@ -162,7 +162,7 @@ const Agents: React.FC = () => {
                   <div className="flex items-center justify-between border-b border-slate-700/50 pb-2">
                       <div>
                           <span className="block text-sm font-bold text-green-400">Pengaturan Agent Online</span>
-                          <span className="text-[10px] text-slate-500">Publish to Public Directory</span>
+                          <span className="text-[10px] text-slate-500">Publikasikan ke Direktori Publik</span>
                       </div>
                       <button 
                         type="button"
@@ -175,7 +175,7 @@ const Agents: React.FC = () => {
 
                   {isPublic && (
                       <div className="animate-fade-in">
-                          <label className="block text-xs font-medium text-slate-400 mb-1">Isi Link Agent (Custom Slug)</label>
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Isi Link Agent (Slug)</label>
                           <div className="flex items-center">
                               <span className="bg-slate-800 border border-r-0 border-slate-600 text-slate-500 text-xs px-2 py-2.5 rounded-l-lg">
                                   .../#/chat/
@@ -185,7 +185,7 @@ const Agents: React.FC = () => {
                                 value={slug}
                                 onChange={(e) => setSlug(e.target.value)}
                                 className="flex-1 bg-slate-800 border border-slate-600 rounded-r-lg px-3 py-2 text-white text-sm focus:border-green-500 outline-none font-mono"
-                                placeholder={editingId || "my-agent-name"}
+                                placeholder={editingId || "nama-agent-anda"}
                               />
                           </div>
                           <p className="text-[10px] text-slate-500 mt-1">
@@ -200,7 +200,7 @@ const Agents: React.FC = () => {
                   type="submit"
                   className={`flex-1 font-bold py-2 px-4 rounded-lg transition-colors ${editingId ? 'bg-green-600 hover:bg-green-500' : 'bg-blue-600 hover:bg-blue-500'} text-white`}
                 >
-                  {editingId ? 'Update Agent' : '+ Add Agent'}
+                  {editingId ? 'Perbarui Agent' : '+ Tambah Agent'}
                 </button>
                 {editingId && (
                   <button
@@ -208,7 +208,7 @@ const Agents: React.FC = () => {
                     onClick={handleCancelEdit}
                     className="bg-slate-700 hover:bg-slate-600 text-slate-300 font-bold py-2 px-4 rounded-lg transition-colors"
                   >
-                    Cancel
+                    Batal
                   </button>
                 )}
               </div>
@@ -219,9 +219,9 @@ const Agents: React.FC = () => {
         {/* Agent List */}
         <div className="lg:col-span-2 space-y-4">
           {loading ? (
-            <div className="text-slate-400">Loading agents...</div>
+            <div className="text-slate-400">Memuat agent...</div>
           ) : agents.length === 0 ? (
-             <div className="text-slate-500 italic p-4 bg-slate-800/50 rounded-lg border border-slate-700">No agents defined yet.</div>
+             <div className="text-slate-500 italic p-4 bg-slate-800/50 rounded-lg border border-slate-700">Belum ada agent yang dibuat.</div>
           ) : (
             agents.map((agent) => (
               <div key={agent.id} className={`p-5 rounded-xl border flex flex-col md:flex-row items-start space-y-4 md:space-y-0 md:space-x-4 transition-all ${editingId === agent.id ? 'bg-slate-800 border-blue-500 ring-1 ring-blue-500' : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}>
@@ -253,7 +253,7 @@ const Agents: React.FC = () => {
                               {window.location.origin}/#/chat/{agent.slug || agent.id}
                           </code>
                           <button onClick={() => copyPublicLink(agent)} className="text-xs bg-slate-700 hover:bg-slate-600 text-white px-2 py-1 rounded transition-colors flex-shrink-0">
-                              Copy Link
+                              Salin Link
                           </button>
                       </div>
                   )}
