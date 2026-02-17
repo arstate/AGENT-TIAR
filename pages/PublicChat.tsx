@@ -190,7 +190,8 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
                 name: regName,
                 phone: regPhone
             },
-            lastActive: serverTimestamp()
+            lastActive: serverTimestamp(),
+            isRead: false // Mark as unread initially
         });
         setIsRegistered(true);
     };
@@ -226,9 +227,10 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
             timestamp: serverTimestamp()
         });
 
-        // Update last active
+        // Update last active AND set isRead to FALSE (Admin needs to read it)
         await update(ref(db, `public_chats/${agent.id}/${deviceId}`), {
-            lastActive: serverTimestamp()
+            lastActive: serverTimestamp(),
+            isRead: false 
         });
 
         const settingsSnap = await get(child(ref(db), 'settings'));

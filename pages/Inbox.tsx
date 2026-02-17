@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/firebase';
-import { ref, onValue, get } from 'firebase/database';
+import { ref, onValue, get, update } from 'firebase/database';
 import { Agent, ChatMessage } from '../types';
 
 interface UserSession {
@@ -15,6 +15,7 @@ interface UserSession {
     phone: string;
   };
   lastActive: number;
+  isRead?: boolean; // New Flag for status
   messages: ChatMessage[];
 }
 
@@ -88,6 +89,7 @@ const Inbox: React.FC = () => {
                     deviceId,
                     userInfo: sessionData.userInfo,
                     lastActive: sessionData.lastActive || 0,
+                    isRead: sessionData.isRead === undefined ? true : sessionData.isRead, // Default to read if old data
                     messages: msgList
                 });
             });
@@ -124,6 +126,15 @@ const Inbox: React.FC = () => {
       window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(text)}`, '_blank');
   };
 
+  const handleMarkAsRead = async () => {
+      if (!selectedSession) return;
+      
+      const chatRef = ref(db, `public_chats/${selectedSession.agentId}/${selectedSession.deviceId}`);
+      await update(chatRef, {
+          isRead: true
+      });
+  };
+
   if (loading) {
       return <div className="p-8 text-center text-slate-400">Memuat kotak masuk...</div>;
   }
@@ -150,17 +161,26 @@ const Inbox: React.FC = () => {
                         onClick={() => setSelectedSession(session)}
                         className={`w-full text-left p-4 border-b border-slate-700/50 hover:bg-slate-700 transition-colors flex gap-3 ${selectedSession?.key === session.key ? 'bg-blue-900/20 border-l-4 border-l-blue-500' : ''}`}
                     >
-                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shrink-0 ${session.agentAvatar}`}>
+                        <div className={`w-12 h-12 rounded-full flex items-center justify-center text-white font-bold shrink-0 ${session.agentAvatar} relative`}>
                             {session.agentName[0]}
+                            {/* UNREAD BADGE */}
+                            {session.isRead === false && (
+                                <span className="absolute top-0 right-0 block h-3 w-3 rounded-full bg-green-500 ring-2 ring-slate-800 transform translate-x-1 -translate-y-1"></span>
+                            )}
                         </div>
                         <div className="flex-1 min-w-0">
                             <div className="flex justify-between items-start mb-1">
-                                <h4 className="font-bold text-white truncate text-sm">
+                                <h4 className={`truncate text-sm ${session.isRead === false ? 'font-extrabold text-white' : 'font-bold text-slate-300'}`}>
                                     {session.userInfo?.name || 'Tamu Anonim'}
                                 </h4>
-                                <span className="text-[10px] text-slate-400">
-                                    {new Date(session.lastActive).toLocaleDateString(undefined, {month:'short', day:'numeric'})}
-                                </span>
+                                <div className="flex flex-col items-end">
+                                    <span className="text-[10px] text-slate-400">
+                                        {new Date(session.lastActive).toLocaleDateString(undefined, {month:'short', day:'numeric'})}
+                                    </span>
+                                    {session.isRead === false && (
+                                        <span className="text-[9px] bg-green-600 text-white px-1.5 rounded mt-0.5 font-bold">BARU</span>
+                                    )}
+                                </div>
                             </div>
                             <div className="flex items-center gap-1 mb-1">
                                 <svg className="w-3 h-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
@@ -194,7 +214,10 @@ const Inbox: React.FC = () => {
                             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                          </button>
                          <div>
-                             <h2 className="font-bold text-white text-lg">{selectedSession.userInfo?.name || 'Tamu Anonim'}</h2>
+                             <h2 className="font-bold text-white text-lg flex items-center gap-2">
+                                {selectedSession.userInfo?.name || 'Tamu Anonim'}
+                                {selectedSession.isRead === false && <span className="bg-green-600 text-white text-[10px] px-2 py-0.5 rounded-full animate-pulse">Pesan Baru</span>}
+                             </h2>
                              <div className="flex items-center gap-2 text-sm text-slate-400">
                                  <span>{selectedSession.userInfo?.phone || '-'}</span>
                                  {selectedSession.userInfo?.phone && (
@@ -209,8 +232,20 @@ const Inbox: React.FC = () => {
                              </div>
                          </div>
                     </div>
-                    <div className="text-right">
-                         <div className="text-xs text-slate-500 uppercase tracking-widest">Berbicara Dengan</div>
+                    <div className="flex flex-col items-end gap-1">
+                         {/* MARK AS READ BUTTON */}
+                         {selectedSession.isRead === false && (
+                             <button 
+                                onClick={handleMarkAsRead}
+                                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md animate-pulse"
+                             >
+                                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                 </svg>
+                                 Tandai Dibaca
+                             </button>
+                         )}
+                         <div className="text-xs text-slate-500 uppercase tracking-widest mt-1">Berbicara Dengan</div>
                          <div className="text-sm font-bold text-blue-400">{selectedSession.agentName}</div>
                     </div>
                 </div>
