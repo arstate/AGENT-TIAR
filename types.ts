@@ -16,11 +16,12 @@ export interface Agent {
 export interface KnowledgeItem {
   id: string;
   agentId?: string; // Reference to which agent owns this knowledge
-  type: 'text' | 'image' | 'pdf' | 'file';
+  type: 'text' | 'image' | 'pdf' | 'file' | 'composite';
   originalName?: string;
   contentSummary: string; // The "learned" data
   rawContent?: string; // For text inputs
-  imageData?: string; // Base64 string of the stored image (for AI to send back)
+  imageData?: string; // Base64 string of the stored image (Single)
+  images?: string[]; // New: Base64 strings for multiple images (Combined)
   timestamp: number;
 }
 

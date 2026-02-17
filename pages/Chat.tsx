@@ -353,13 +353,21 @@ const Chat: React.FC = () => {
     // --- IMPROVED CONTEXT BUILDER ---
     // Separate Images from General Text to make it easier for AI to select specific files.
     
+    // Legacy single images
     const imageKnowledge = knowledge.filter(k => k.imageData && k.type === 'image');
-    const textKnowledge = knowledge.filter(k => !k.imageData || k.type !== 'image');
+    // New composite (grouped) images
+    const compositeKnowledge = knowledge.filter(k => k.images && k.images.length > 0 && k.type === 'composite');
+    // Text knowledge
+    const textKnowledge = knowledge.filter(k => (!k.imageData && !k.images) || k.type === 'file' || k.type === 'text');
 
     const imageContextList = imageKnowledge.map(k => {
-        // Clean summary for list format
         const cleanSummary = k.contentSummary.replace(/\n/g, ' ').substring(0, 300); 
         return `[IMAGE_ID: ${k.id}] Filename: ${k.originalName} | Description: ${cleanSummary}`;
+    }).join('\n');
+
+    const compositeContextList = compositeKnowledge.map(k => {
+        const cleanSummary = k.contentSummary.replace(/\n/g, ' ').substring(0, 300);
+        return `[IMAGE_ID: ${k.id}] COLLECTION: ${k.originalName} (${k.images?.length} images) | Context: ${cleanSummary}`;
     }).join('\n');
 
     const generalContextList = textKnowledge.map(k => {
@@ -368,7 +376,9 @@ const Chat: React.FC = () => {
 
     const contextString = `
     === AVAILABLE IMAGES (Use these IDs to send images) ===
-    ${imageContextList || "No specific images available."}
+    ${imageContextList || ""}
+    ${compositeContextList || ""}
+    ${(!imageContextList && !compositeContextList) ? "No specific images available." : ""}
 
     === GENERAL INFORMATION & FACTS ===
     ${generalContextList || "No general information available."}
@@ -409,10 +419,17 @@ const Chat: React.FC = () => {
         // Find all image tags
         while ((match = sendImageRegex.exec(responseText)) !== null) {
             const imageId = match[1];
-            // Find the image in local knowledge state
             const kItem = knowledge.find(k => k.id === imageId);
-            if (kItem && kItem.imageData) {
-                modelImagesToSend.push(kItem.imageData);
+            
+            if (kItem) {
+                // Handle Single Image
+                if (kItem.imageData) {
+                    modelImagesToSend.push(kItem.imageData);
+                }
+                // Handle Combined/Composite Images (Add all of them)
+                if (kItem.images && kItem.images.length > 0) {
+                    modelImagesToSend.push(...kItem.images);
+                }
             }
         }
 
