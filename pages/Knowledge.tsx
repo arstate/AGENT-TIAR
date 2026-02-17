@@ -9,6 +9,23 @@ declare const pdfjsLib: any;
 
 // Helper: Compress Image for Database Storage
 const compressImageForDb = async (file: File, quality: number = 0.7): Promise<string> => {
+    // SECURITY/LOGIC FIX: If quality is 1 (Original), DO NOT use canvas. 
+    // Return original Base64 immediately to preserve 100% quality and metadata.
+    if (quality >= 1) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                resolve(reader.result as string);
+            };
+            reader.onerror = (error) => {
+                console.error("Error reading file:", error);
+                resolve('');
+            };
+            reader.readAsDataURL(file);
+        });
+    }
+
+    // Normal Compression Logic
     if (!file.type.startsWith('image/')) return '';
     return new Promise((resolve) => {
         const img = new Image();
@@ -32,7 +49,6 @@ const compressImageForDb = async (file: File, quality: number = 0.7): Promise<st
             const ctx = canvas.getContext('2d');
             if(ctx) {
                 ctx.drawImage(img, 0, 0, width, height);
-                // Use the passed quality parameter
                 const dataUrl = canvas.toDataURL('image/jpeg', quality); 
                 resolve(dataUrl); 
             } else {
@@ -263,7 +279,8 @@ const Knowledge: React.FC = () => {
     const model = settings.selectedModel || GeminiModel.FLASH_3;
     
     // Use the quality setting from the Queue Item
-    const quality = item.compressionQuality || 0.7;
+    // Ensure default is 0.7 if undefined, BUT permit 1.0 (No Compression)
+    const quality = item.compressionQuality !== undefined ? item.compressionQuality : 0.7;
 
     // 1. PRE-PROCESS FILES (Handle PDF Conversion)
     let processedFiles: File[] = [];
@@ -559,23 +576,33 @@ const Knowledge: React.FC = () => {
                              </div>
                          </div>
 
-                         {/* Quality Selector */}
+                         {/* Quality Selector - BUTTON GROUP (Better for clicking) */}
                          <div className={`bg-slate-900/60 p-3 rounded-lg border border-slate-700/50 flex flex-col justify-between transition-opacity ${!saveImages ? 'opacity-50 pointer-events-none' : ''}`}>
                              <div className="mb-2">
-                                <span className="block text-sm font-medium text-slate-300">Quality</span>
-                                <span className="text-[10px] text-slate-500">Image compression level</span>
+                                <span className="block text-sm font-medium text-slate-300">Image Quality</span>
+                                <span className="text-[10px] text-slate-500">{selectedQuality === 1 ? 'No Compression' : `${selectedQuality * 100}% Quality`}</span>
                              </div>
-                             <select 
-                                value={selectedQuality}
-                                onChange={(e) => setSelectedQuality(parseFloat(e.target.value))}
-                                className="bg-slate-800 text-white text-xs p-1.5 rounded border border-slate-600 outline-none focus:border-blue-500 w-full"
-                             >
-                                <option value="0.6">Saver (60%)</option>
-                                <option value="0.7">Normal (70%)</option>
-                                <option value="0.8">High (80%)</option>
-                                <option value="0.9">Super (90%)</option>
-                                <option value="1.0">Original (100%)</option>
-                             </select>
+                             
+                             <div className="grid grid-cols-4 gap-1">
+                                {[
+                                    { val: 0.6, label: '60%' },
+                                    { val: 0.8, label: '80%' },
+                                    { val: 0.9, label: '90%' },
+                                    { val: 1.0, label: 'Orig' }
+                                ].map((opt) => (
+                                    <button
+                                        key={opt.val}
+                                        onClick={() => setSelectedQuality(opt.val)}
+                                        className={`px-1 py-1.5 rounded text-[10px] font-bold border transition-colors ${
+                                            selectedQuality === opt.val 
+                                            ? 'bg-cyan-600 text-white border-cyan-500 shadow-md' 
+                                            : 'bg-slate-800 text-slate-400 border-slate-600 hover:bg-slate-700 hover:text-white'
+                                        }`}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                             </div>
                          </div>
                     </div>
                 </div>
