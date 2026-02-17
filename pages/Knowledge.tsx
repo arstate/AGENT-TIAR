@@ -92,6 +92,7 @@ const Knowledge: React.FC = () => {
   const [textInput, setTextInput] = useState('');
   const [saveImages, setSaveImages] = useState(true); 
   const [storageMode, setStorageMode] = useState<'separate' | 'combined'>('separate');
+  const [selectedQuality, setSelectedQuality] = useState<number>(0.8); // Default 80%
 
   // Queue State
   const [trainingQueue, setTrainingQueue] = useState<TrainingQueueItem[]>([]);
@@ -240,6 +241,7 @@ const Knowledge: React.FC = () => {
           textInput: textInput,
           saveImages: saveImages,
           storageMode: storageMode,
+          compressionQuality: selectedQuality, // Save the selected quality for this batch
           status: 'pending',
           timestamp: Date.now()
       };
@@ -259,16 +261,12 @@ const Knowledge: React.FC = () => {
 
     const gemini = new GeminiService(settings.apiKeys);
     const model = settings.selectedModel || GeminiModel.FLASH_3;
-    // Get quality settings (default 0.7 if undefined)
-    const quality = settings.compressionQuality !== undefined ? settings.compressionQuality : 0.7;
+    
+    // Use the quality setting from the Queue Item
+    const quality = item.compressionQuality || 0.7;
 
     // 1. PRE-PROCESS FILES (Handle PDF Conversion)
     let processedFiles: File[] = [];
-    
-    // Only convert PDFs if we are saving them to DB or if we just want Gemini to see them
-    // Gemini can see PDFs directly, BUT if we want to SAVE them as images, we must convert.
-    // If SaveImages is OFF, we send original PDF to Gemini.
-    // If SaveImages is ON, we convert PDF to Images, send Images to Gemini, and Save Images.
 
     for (const file of item.files) {
         if (file.type === 'application/pdf') {
@@ -301,7 +299,7 @@ const Knowledge: React.FC = () => {
             for (let i=0; i<imageFiles.length; i++) {
                 const img = imageFiles[i];
                 setStatus(`Saving image ${i+1}/${imageFiles.length}...`);
-                // Only compress and save base64 if saveImages is true. Pass quality setting.
+                // Only compress and save base64 if saveImages is true. Pass specific quality.
                 const b64 = item.saveImages ? await compressImageForDb(img, quality) : null;
                 
                 await push(ref(db, `knowledge/${item.agentId}`), {
@@ -314,7 +312,7 @@ const Knowledge: React.FC = () => {
                 });
             }
         }
-        // Save Text/PDF (if any remaining non-image files or text)
+        // Save Text/PDF
         if (otherFiles.length > 0 || item.textInput.trim() || (imageFiles.length === 0 && !item.saveImages)) {
                 await push(ref(db, `knowledge/${item.agentId}`), {
                 type: otherFiles.length > 0 ? 'file' : 'text',
@@ -334,7 +332,7 @@ const Knowledge: React.FC = () => {
             originalName: item.files.length > 0 ? `${item.files.length} Files (${item.files[0].name}...)` : 'Combined Entry',
             contentSummary: summary,
             rawContent: item.textInput,
-            images: allImages.filter(b => !!b), // Remove empty strings
+            images: allImages.filter(b => !!b),
             timestamp: Date.now()
         });
     }
@@ -360,19 +358,11 @@ const Knowledge: React.FC = () => {
   };
 
   const executeRetrain = async (resume: boolean = false) => {
-    // ... Existing Retrain Logic (Simplification: keeping it mostly same but aware of queue UI)
     setShowRetrainModal(false); 
     stopRetrainRef.current = false;
-    // Note: We use a separate state for Re-training vs Queue processing to avoid conflicts
-    // But logically, re-training blocks the "Analyze" feature on this specific screen if we want simple UI.
-    // For now, let's allow re-training to just use the global status.
-    
-    // ... (Retrain logic omitted for brevity, assumes same as previous implementation but updating `status` state)
-    // To implement cleanly, we should ideally treat retrain as a special queue item, but for now let's keep it direct.
-    setIsProcessingQueue(true); // Block queue processing
+    setIsProcessingQueue(true);
     setStatus("Starting Re-train...");
     
-    // Copied from previous response logic...
     const targetItems = selectedItemIds.length > 0 
         ? knowledgeList.filter(k => selectedItemIds.includes(k.id)) 
         : knowledgeList;
@@ -414,7 +404,6 @@ const Knowledge: React.FC = () => {
             setStatus(`Re-analyzing ${i + 1}/${targetItems.length}: ${item.originalName || 'Item'}...`);
 
             let filesToAnalyze: File[] = [];
-            // Reconstruct files from Base64
             if (item.imageData) {
                 const res = await fetch(item.imageData);
                 const blob = await res.blob();
@@ -515,7 +504,7 @@ const Knowledge: React.FC = () => {
                 <button
                     key={agent.id}
                     onClick={() => { setSelectedAgentId(agent.id); setAnalysisResult(null); setSelectedItemIds([]); }}
-                    disabled={isProcessingQueue && currentQueueId !== null} // Only disable if actively processing something that might conflict? Actually queue allows switching.
+                    disabled={isProcessingQueue && currentQueueId !== null} 
                     className={`px-4 py-2 rounded-full border text-sm font-semibold transition-all ${
                         selectedAgentId === agent.id 
                         ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/20' 
@@ -551,18 +540,43 @@ const Knowledge: React.FC = () => {
                         </div>
                     </div>
 
-                    {/* Save to DB Toggle */}
-                    <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-700/50 flex items-center justify-between">
-                         <div>
-                            <span className="block text-sm font-medium text-slate-300">Save Images/Files to DB?</span>
-                            <span className="text-xs text-slate-500">{saveImages ? "Files saved (PDFs converted to images)" : "Analysis only (Files not stored)"}</span>
+                    {/* Image Settings Config Grid */}
+                    <div className="grid grid-cols-2 gap-3">
+                         {/* Save to DB Toggle */}
+                         <div className="bg-slate-900/60 p-3 rounded-lg border border-slate-700/50 flex flex-col justify-between">
+                             <div className="mb-2">
+                                <span className="block text-sm font-medium text-slate-300">Save Files?</span>
+                                <span className="text-[10px] text-slate-500">Save converted images to DB</span>
+                             </div>
+                             <div className="flex items-center">
+                                 <button
+                                    onClick={() => setSaveImages(!saveImages)}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${saveImages ? 'bg-green-500' : 'bg-slate-600'}`}
+                                >
+                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${saveImages ? 'translate-x-6' : 'translate-x-1'}`} />
+                                </button>
+                                <span className="ml-2 text-xs font-bold text-white">{saveImages ? 'ON' : 'OFF'}</span>
+                             </div>
                          </div>
-                         <button
-                            onClick={() => setSaveImages(!saveImages)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${saveImages ? 'bg-green-500' : 'bg-slate-600'}`}
-                        >
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${saveImages ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
+
+                         {/* Quality Selector */}
+                         <div className={`bg-slate-900/60 p-3 rounded-lg border border-slate-700/50 flex flex-col justify-between transition-opacity ${!saveImages ? 'opacity-50 pointer-events-none' : ''}`}>
+                             <div className="mb-2">
+                                <span className="block text-sm font-medium text-slate-300">Quality</span>
+                                <span className="text-[10px] text-slate-500">Image compression level</span>
+                             </div>
+                             <select 
+                                value={selectedQuality}
+                                onChange={(e) => setSelectedQuality(parseFloat(e.target.value))}
+                                className="bg-slate-800 text-white text-xs p-1.5 rounded border border-slate-600 outline-none focus:border-blue-500 w-full"
+                             >
+                                <option value="0.6">Saver (60%)</option>
+                                <option value="0.7">Normal (70%)</option>
+                                <option value="0.8">High (80%)</option>
+                                <option value="0.9">Super (90%)</option>
+                                <option value="1.0">Original (100%)</option>
+                             </select>
+                         </div>
                     </div>
                 </div>
 

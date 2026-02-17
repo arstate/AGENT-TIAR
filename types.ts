@@ -53,6 +53,7 @@ export interface TrainingQueueItem {
   textInput: string;
   saveImages: boolean; // Whether to save files to DB
   storageMode: 'separate' | 'combined';
+  compressionQuality: number; // Specific quality for this batch
   status: 'pending' | 'processing' | 'completed' | 'error';
   errorMsg?: string;
   timestamp: number;
