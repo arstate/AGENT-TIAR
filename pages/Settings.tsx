@@ -8,6 +8,7 @@ const Settings: React.FC = () => {
   const [keys, setKeys] = useState<string[]>([]);
   const [newKey, setNewKey] = useState('');
   const [selectedModel, setSelectedModel] = useState<GeminiModel>(GeminiModel.FLASH_3);
+  const [compressionQuality, setCompressionQuality] = useState<number>(0.7); // Default 70%
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -19,6 +20,8 @@ const Settings: React.FC = () => {
       if (data) {
         setKeys(data.apiKeys || []);
         setSelectedModel(data.selectedModel || GeminiModel.FLASH_3);
+        // Default to 0.7 if not set
+        setCompressionQuality(data.compressionQuality !== undefined ? data.compressionQuality : 0.7);
       }
       setLoading(false);
     });
@@ -30,6 +33,7 @@ const Settings: React.FC = () => {
     const settings: AppSettings = {
       apiKeys: keys,
       selectedModel: selectedModel,
+      compressionQuality: compressionQuality
     };
     
     // Save to Firebase
@@ -64,7 +68,7 @@ const Settings: React.FC = () => {
     <div className="space-y-8 animate-fade-in">
       <div className="border-b border-slate-700 pb-4">
         <h2 className="text-3xl font-bold text-white tracking-tight">System Configuration</h2>
-        <p className="text-slate-400 mt-2">Manage API keys and AI Model behavior.</p>
+        <p className="text-slate-400 mt-2">Manage API keys, AI Model, and Storage optimization.</p>
       </div>
 
       {/* API Keys Section */}
@@ -137,41 +141,84 @@ const Settings: React.FC = () => {
         </div>
       </div>
 
-      {/* Model Selection */}
-      <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
-        <h3 className="text-xl font-semibold mb-4 flex items-center text-white">
-          <svg className="w-6 h-6 mr-2 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-          </svg>
-          AI Model Version
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {[
-            { id: GeminiModel.FLASH_3, label: 'Gemini 3 Flash', desc: 'Fastest, low latency' },
-            { id: GeminiModel.FLASH_2_5, label: 'Gemini 2.5 Flash', desc: 'Balanced performance' },
-            { id: GeminiModel.PRO_3, label: 'Gemini 3 Pro', desc: 'Complex reasoning' },
-          ].map((model) => (
-            <button
-              key={model.id}
-              onClick={() => setSelectedModel(model.id)}
-              className={`text-left p-4 rounded-lg border transition-all ${
-                selectedModel === model.id
-                  ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500'
-                  : 'bg-slate-900 border-slate-700 hover:bg-slate-700'
-              }`}
-            >
-              <div className="flex justify-between items-center mb-1">
-                  <div className="font-semibold text-white">{model.label}</div>
-                  {selectedModel === model.id && (
-                     <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                     </svg>
-                  )}
-              </div>
-              <div className="text-xs text-slate-400">{model.desc}</div>
-            </button>
-          ))}
-        </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Model Selection */}
+          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
+            <h3 className="text-xl font-semibold mb-4 flex items-center text-white">
+              <svg className="w-6 h-6 mr-2 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+              </svg>
+              AI Model Version
+            </h3>
+            <div className="space-y-3">
+              {[
+                { id: GeminiModel.FLASH_3, label: 'Gemini 3 Flash', desc: 'Fastest, low latency' },
+                { id: GeminiModel.FLASH_2_5, label: 'Gemini 2.5 Flash', desc: 'Balanced performance' },
+                { id: GeminiModel.PRO_3, label: 'Gemini 3 Pro', desc: 'Complex reasoning' },
+              ].map((model) => (
+                <button
+                  key={model.id}
+                  onClick={() => setSelectedModel(model.id)}
+                  className={`w-full text-left p-3 rounded-lg border transition-all ${
+                    selectedModel === model.id
+                      ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500'
+                      : 'bg-slate-900 border-slate-700 hover:bg-slate-700'
+                  }`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                      <div className="font-semibold text-white text-sm">{model.label}</div>
+                      {selectedModel === model.id && (
+                        <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                  </div>
+                  <div className="text-xs text-slate-400">{model.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Compression Settings */}
+          <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl">
+            <h3 className="text-xl font-semibold mb-4 flex items-center text-white">
+              <svg className="w-6 h-6 mr-2 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              Image Storage Quality
+            </h3>
+            <p className="text-sm text-slate-400 mb-4">
+               Controls quality when saving training images to database. Lower quality saves storage space.
+            </p>
+            <div className="space-y-3">
+              {[
+                { val: 0.6, label: 'Low (60%)', desc: 'Best for saving space' },
+                { val: 0.8, label: 'High (80%)', desc: 'Balanced (Recommended)' },
+                { val: 0.9, label: 'Very High (90%)', desc: 'High detail' },
+                { val: 1.0, label: 'Original (100%)', desc: 'No compression (Max Size)' },
+              ].map((opt) => (
+                <button
+                  key={opt.val}
+                  onClick={() => setCompressionQuality(opt.val)}
+                  className={`w-full text-left p-3 rounded-lg border transition-all ${
+                    compressionQuality === opt.val
+                      ? 'bg-cyan-600/20 border-cyan-500 ring-1 ring-cyan-500'
+                      : 'bg-slate-900 border-slate-700 hover:bg-slate-700'
+                  }`}
+                >
+                  <div className="flex justify-between items-center mb-1">
+                      <div className="font-semibold text-white text-sm">{opt.label}</div>
+                      {compressionQuality === opt.val && (
+                        <svg className="w-5 h-5 text-cyan-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                  </div>
+                  <div className="text-xs text-slate-400">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+          </div>
       </div>
 
       <div className="flex justify-end pt-4">

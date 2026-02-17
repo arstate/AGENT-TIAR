@@ -28,6 +28,7 @@ export interface KnowledgeItem {
 export interface AppSettings {
   apiKeys: string[];
   selectedModel: GeminiModel;
+  compressionQuality?: number; // 0.1 to 1.0
 }
 
 export interface ChatMessage {
@@ -42,4 +43,17 @@ export interface ChatSession {
   id: string;
   name: string;
   createdAt: number;
+}
+
+export interface TrainingQueueItem {
+  id: string;
+  agentId: string;
+  agentName: string;
+  files: File[];
+  textInput: string;
+  saveImages: boolean; // Whether to save files to DB
+  storageMode: 'separate' | 'combined';
+  status: 'pending' | 'processing' | 'completed' | 'error';
+  errorMsg?: string;
+  timestamp: number;
 }
