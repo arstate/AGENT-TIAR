@@ -9,7 +9,8 @@ const Agents: React.FC = () => {
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
   const [personality, setPersonality] = useState('');
-  const [isPublic, setIsPublic] = useState(false); // New state
+  const [isPublic, setIsPublic] = useState(false);
+  const [slug, setSlug] = useState(''); // New state for custom link
   const [loading, setLoading] = useState(true);
   
   // State to track editing mode
@@ -38,15 +39,21 @@ const Agents: React.FC = () => {
     e.preventDefault();
     if (!name || !role) return;
 
+    // Simple slug validation: replace spaces with dashes, lowercase
+    const cleanSlug = slug.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+    const agentData = {
+      name,
+      role,
+      personality,
+      isPublic,
+      slug: cleanSlug || null // If empty, save as null
+    };
+
     if (editingId) {
       // Update existing agent
       const agentRef = ref(db, `agents/${editingId}`);
-      await update(agentRef, {
-        name,
-        role,
-        personality,
-        isPublic
-      });
+      await update(agentRef, agentData);
       setEditingId(null);
     } else {
       // Create new agent
@@ -54,19 +61,22 @@ const Agents: React.FC = () => {
       const randomColor = colors[Math.floor(Math.random() * colors.length)];
 
       await push(ref(db, 'agents'), {
-        name,
-        role,
-        personality,
+        ...agentData,
         avatar: randomColor,
-        isPublic: false
       });
     }
 
     // Reset form
+    resetForm();
+  };
+
+  const resetForm = () => {
     setName('');
     setRole('');
     setPersonality('');
     setIsPublic(false);
+    setSlug('');
+    setEditingId(null);
   };
 
   const handleEdit = (agent: Agent) => {
@@ -75,27 +85,26 @@ const Agents: React.FC = () => {
     setRole(agent.role);
     setPersonality(agent.personality);
     setIsPublic(agent.isPublic || false);
+    setSlug(agent.slug || '');
   };
 
   const handleCancelEdit = () => {
-    setEditingId(null);
-    setName('');
-    setRole('');
-    setPersonality('');
-    setIsPublic(false);
+    resetForm();
   };
 
   const deleteAgent = async (id: string) => {
     if (confirm('Are you sure you want to delete this agent?')) {
       await remove(ref(db, `agents/${id}`));
       if (editingId === id) {
-        handleCancelEdit();
+        resetForm();
       }
     }
   };
 
-  const copyPublicLink = (id: string) => {
-      const url = `${window.location.origin}/#/chat/${id}`;
+  const copyPublicLink = (agent: Agent) => {
+      // Use slug if available, otherwise use ID
+      const linkId = agent.slug || agent.id;
+      const url = `${window.location.origin}/#/chat/${linkId}`;
       navigator.clipboard.writeText(url);
       alert("Link copied: " + url);
   };
@@ -115,6 +124,7 @@ const Agents: React.FC = () => {
               {editingId ? 'Edit Agent' : 'Create New Agent'}
             </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Basic Info */}
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1">Agent Name</label>
                 <input
@@ -147,11 +157,12 @@ const Agents: React.FC = () => {
                 />
               </div>
 
-              {editingId && (
-                  <div className="flex items-center justify-between bg-slate-900 p-3 rounded-lg border border-slate-700">
+              {/* ONLINE CONFIGURATION SECTION */}
+              <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-700/50 pb-2">
                       <div>
-                          <span className="block text-sm font-bold text-white">Publish Online</span>
-                          <span className="text-xs text-slate-500">Accessible via Public Link</span>
+                          <span className="block text-sm font-bold text-green-400">Pengaturan Agent Online</span>
+                          <span className="text-[10px] text-slate-500">Publish to Public Directory</span>
                       </div>
                       <button 
                         type="button"
@@ -161,7 +172,28 @@ const Agents: React.FC = () => {
                           <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${isPublic ? 'translate-x-6' : 'translate-x-1'}`} />
                       </button>
                   </div>
-              )}
+
+                  {isPublic && (
+                      <div className="animate-fade-in">
+                          <label className="block text-xs font-medium text-slate-400 mb-1">Isi Link Agent (Custom Slug)</label>
+                          <div className="flex items-center">
+                              <span className="bg-slate-800 border border-r-0 border-slate-600 text-slate-500 text-xs px-2 py-2.5 rounded-l-lg">
+                                  .../#/chat/
+                              </span>
+                              <input
+                                type="text"
+                                value={slug}
+                                onChange={(e) => setSlug(e.target.value)}
+                                className="flex-1 bg-slate-800 border border-slate-600 rounded-r-lg px-3 py-2 text-white text-sm focus:border-green-500 outline-none font-mono"
+                                placeholder={editingId || "my-agent-name"}
+                              />
+                          </div>
+                          <p className="text-[10px] text-slate-500 mt-1">
+                              Preview: {window.location.origin}/#/chat/{slug || (editingId ? editingId : '...')}
+                          </p>
+                      </div>
+                  )}
+              </div>
               
               <div className="flex gap-2">
                 <button
@@ -218,9 +250,9 @@ const Agents: React.FC = () => {
                   {agent.isPublic && (
                       <div className="mt-3 bg-black/30 rounded p-2 flex items-center justify-between gap-2 border border-slate-700/50">
                           <code className="text-xs text-slate-400 truncate flex-1 font-mono">
-                              {window.location.origin}/#/chat/{agent.id}
+                              {window.location.origin}/#/chat/{agent.slug || agent.id}
                           </code>
-                          <button onClick={() => copyPublicLink(agent.id)} className="text-xs bg-slate-700 hover:bg-slate-600 text-white px-2 py-1 rounded transition-colors">
+                          <button onClick={() => copyPublicLink(agent)} className="text-xs bg-slate-700 hover:bg-slate-600 text-white px-2 py-1 rounded transition-colors flex-shrink-0">
                               Copy Link
                           </button>
                       </div>

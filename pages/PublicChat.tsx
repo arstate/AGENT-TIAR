@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { db } from '../services/firebase';
@@ -45,7 +46,7 @@ const BlobImage: React.FC<{ base64Src: string }> = ({ base64Src }) => {
 };
 
 const PublicChat: React.FC = () => {
-    const { agentId } = useParams();
+    const { agentId } = useParams(); // Note: agentId might be a SLUG or an ID
     const [agent, setAgent] = useState<Agent | null>(null);
     const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -55,24 +56,58 @@ const PublicChat: React.FC = () => {
     const [sessionId, setSessionId] = useState<string | null>(null);
     const bottomRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const [loadingAgent, setLoadingAgent] = useState(true);
 
-    // Load Agent Data
+    // Load Agent Data (Handle ID or Slug)
     useEffect(() => {
         if (!agentId) return;
-        const agentRef = ref(db, `agents/${agentId}`);
-        get(agentRef).then((snap) => {
-            if (snap.exists()) {
-                const data = snap.val();
-                if (data.isPublic) {
-                    setAgent({ id: agentId, ...data });
-                } else {
-                    setAgent(null); // Not public
-                }
-            }
-        });
 
-        // Load Knowledge
-        const knowledgeRef = ref(db, `knowledge/${agentId}`);
+        const findAgent = async () => {
+            setLoadingAgent(true);
+            try {
+                // 1. Try to fetch as direct ID first
+                const agentRef = ref(db, `agents/${agentId}`);
+                const snap = await get(agentRef);
+                
+                if (snap.exists()) {
+                    const data = snap.val();
+                    if (data.isPublic) {
+                        setAgent({ id: agentId, ...data });
+                        setLoadingAgent(false);
+                        return; // Found by ID
+                    }
+                }
+
+                // 2. If not found by ID (or not public), search by SLUG
+                const allAgentsRef = ref(db, 'agents');
+                const allSnap = await get(allAgentsRef);
+                if (allSnap.exists()) {
+                    const allData = allSnap.val();
+                    const foundKey = Object.keys(allData).find(key => {
+                        return allData[key].slug === agentId && allData[key].isPublic;
+                    });
+
+                    if (foundKey) {
+                        setAgent({ id: foundKey, ...allData[foundKey] });
+                    } else {
+                        setAgent(null);
+                    }
+                }
+            } catch (error) {
+                console.error("Error finding agent:", error);
+                setAgent(null);
+            } finally {
+                setLoadingAgent(false);
+            }
+        };
+
+        findAgent();
+    }, [agentId]);
+
+    // Load Knowledge (Requires resolved Agent ID)
+    useEffect(() => {
+        if (!agent) return;
+        const knowledgeRef = ref(db, `knowledge/${agent.id}`);
         get(knowledgeRef).then(snap => {
             if(snap.exists()) {
                 const data = snap.val();
@@ -80,28 +115,26 @@ const PublicChat: React.FC = () => {
                 setKnowledge(list);
             }
         });
-
-    }, [agentId]);
+    }, [agent]);
 
     // Session Management (LocalStorage)
     useEffect(() => {
-        if (!agentId) return;
-        let sid = localStorage.getItem(`chat_session_${agentId}`);
+        if (!agent) return;
+        // Use agent.id (Firebase Key) for session storage, not the slug
+        let sid = localStorage.getItem(`chat_session_${agent.id}`);
         if (!sid) {
             sid = `public_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            localStorage.setItem(`chat_session_${agentId}`, sid);
-            // Create session in DB for admin visibility (optional, stored in separate node?)
-            // For now, let's store in main chats but marked as public
-            const sessionRef = ref(db, `chats/${agentId}/${sid}`);
+            localStorage.setItem(`chat_session_${agent.id}`, sid);
+            const sessionRef = ref(db, `chats/${agent.id}/${sid}`);
             set(sessionRef, { name: "Guest User", createdAt: serverTimestamp(), type: 'public' });
         }
         setSessionId(sid);
-    }, [agentId]);
+    }, [agent]);
 
     // Load Messages
     useEffect(() => {
-        if (!agentId || !sessionId) return;
-        const messagesRef = ref(db, `chats/${agentId}/${sessionId}/messages`);
+        if (!agent || !sessionId) return;
+        const messagesRef = ref(db, `chats/${agent.id}/${sessionId}/messages`);
         const unsub = onValue(messagesRef, (snap) => {
             const data = snap.val();
             if (data) {
@@ -112,12 +145,12 @@ const PublicChat: React.FC = () => {
             }
         });
         return () => unsub();
-    }, [agentId, sessionId]);
+    }, [agent, sessionId]);
 
     useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isTyping]);
 
     const handleSend = async () => {
-        if ((!input.trim() && chatFiles.length === 0) || !agentId || !sessionId) return;
+        if ((!input.trim() && chatFiles.length === 0) || !agent || !sessionId) return;
 
         const userMsgText = input;
         const rawFiles = [...chatFiles];
@@ -137,26 +170,24 @@ const PublicChat: React.FC = () => {
             base64Images = await Promise.all(imgPromises);
         }
 
-        await push(ref(db, `chats/${agentId}/${sessionId}/messages`), {
+        await push(ref(db, `chats/${agent.id}/${sessionId}/messages`), {
             role: 'user',
             text: userMsgText,
             images: base64Images || null,
             timestamp: serverTimestamp()
         });
 
-        // Fetch Settings (Client side logic required for public chat to work with Firebase)
         const settingsSnap = await get(child(ref(db), 'settings'));
         const settings: AppSettings = settingsSnap.val();
 
         if (!settings || !settings.apiKeys) {
-             await push(ref(db, `chats/${agentId}/${sessionId}/messages`), {
+             await push(ref(db, `chats/${agent.id}/${sessionId}/messages`), {
                 role: 'model', text: "System Error: Service unavailable.", timestamp: serverTimestamp()
             });
             setIsTyping(false);
             return;
         }
 
-        // Context Building (Simplified from Chat.tsx)
         const imageKnowledge = knowledge.filter(k => k.imageData && k.type === 'image');
         const compositeKnowledge = knowledge.filter(k => k.images && k.images.length > 0 && k.type === 'composite');
         const textKnowledge = knowledge.filter(k => (!k.imageData && !k.images) || k.type === 'file' || k.type === 'text');
@@ -190,14 +221,13 @@ const PublicChat: React.FC = () => {
         try {
             let responseText = await gemini.chatWithAgent(
                 settings.selectedModel || GeminiModel.FLASH_3,
-                agent?.role + (agent?.personality ? ` Personality: ${agent.personality}` : ''),
+                agent.role + (agent.personality ? ` Personality: ${agent.personality}` : ''),
                 contextString,
                 history,
                 userMsgText,
                 filesForGemini
             );
 
-            // Image Parsing Logic
             const modelImagesToSend: string[] = [];
             const sendImageRegex = /\[\[SEND_IMAGE:\s*(.+?)\]\]/g;
             let match;
@@ -211,7 +241,7 @@ const PublicChat: React.FC = () => {
             }
             responseText = responseText.replace(sendImageRegex, '').trim();
 
-            await push(ref(db, `chats/${agentId}/${sessionId}/messages`), {
+            await push(ref(db, `chats/${agent.id}/${sessionId}/messages`), {
                 role: 'model',
                 text: responseText,
                 images: modelImagesToSend.length > 0 ? modelImagesToSend : null,
@@ -219,13 +249,21 @@ const PublicChat: React.FC = () => {
             });
         } catch (e) {
             console.error(e);
-             await push(ref(db, `chats/${agentId}/${sessionId}/messages`), {
+             await push(ref(db, `chats/${agent.id}/${sessionId}/messages`), {
                 role: 'model', text: "Sorry, I am having trouble connecting right now.", timestamp: serverTimestamp()
             });
         } finally {
             setIsTyping(false);
         }
     };
+
+    if (loadingAgent) {
+         return (
+            <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+                 <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+         );
+    }
 
     if (!agent) {
         return (

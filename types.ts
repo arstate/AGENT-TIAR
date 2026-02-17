@@ -11,7 +11,8 @@ export interface Agent {
   role: string;
   personality: string;
   avatar: string;
-  isPublic?: boolean; // New: Determines if agent is accessible via public link
+  isPublic?: boolean; // Determines if agent is accessible via public link
+  slug?: string; // New: Custom URL path (e.g., 'customer-service')
 }
 
 export interface KnowledgeItem {
