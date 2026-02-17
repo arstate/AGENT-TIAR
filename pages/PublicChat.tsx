@@ -130,21 +130,22 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
         findAgent();
     }, [effectiveAgentId, agentIdProp]);
 
-    // Check Registration Status
+    // Check Registration Status (Real-time listener)
+    // If admin deletes the chat/userInfo, this will fire and reset isRegistered to false
     useEffect(() => {
         if (!agent || !deviceId) return;
         
-        const checkRegistration = async () => {
-            const userRef = ref(db, `public_chats/${agent.id}/${deviceId}/userInfo`);
-            const snap = await get(userRef);
+        const userRef = ref(db, `public_chats/${agent.id}/${deviceId}/userInfo`);
+        const unsub = onValue(userRef, (snap) => {
             if (snap.exists()) {
                 setIsRegistered(true);
             } else {
                 setIsRegistered(false);
             }
             setCheckingReg(false);
-        };
-        checkRegistration();
+        });
+        
+        return () => unsub();
     }, [agent, deviceId]);
 
     // Load Knowledge (Requires resolved Agent ID)
@@ -193,7 +194,7 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
             lastActive: serverTimestamp(),
             isRead: false // Mark as unread initially
         });
-        setIsRegistered(true);
+        // State update handled by listener
     };
 
     const handleSend = async () => {
@@ -362,7 +363,7 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
     // REGISTRATION FORM OVERLAY
     if (!isRegistered) {
         return (
-            <div className="fixed inset-0 bg-[#0f172a] flex items-center justify-center p-4 z-50">
+            <div className="fixed inset-0 bg-[#0f172a] flex items-center justify-center p-4 z-50 animate-fade-in">
                 <div className="bg-slate-800 border border-slate-700 p-6 rounded-2xl shadow-2xl max-w-md w-full relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-emerald-500"></div>
                     <div className="text-center mb-6">

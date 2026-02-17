@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/firebase';
-import { ref, onValue, get, update } from 'firebase/database';
+import { ref, onValue, get, update, remove } from 'firebase/database';
 import { Agent, ChatMessage } from '../types';
 
 interface UserSession {
@@ -104,6 +104,7 @@ const Inbox: React.FC = () => {
         if (selectedSession) {
             const updated = allSessions.find(s => s.key === selectedSession.key);
             if (updated) setSelectedSession(updated);
+            else setSelectedSession(null); // If deleted
         }
     });
 
@@ -133,6 +134,15 @@ const Inbox: React.FC = () => {
       await update(chatRef, {
           isRead: true
       });
+  };
+
+  const handleDeleteChat = async () => {
+      if (!selectedSession) return;
+      if (confirm("Apakah Anda yakin ingin menghapus chat ini? Data user (Nama/HP) juga akan dihapus, dan user akan diminta mendaftar ulang.")) {
+          // Removes the entire session node
+          await remove(ref(db, `public_chats/${selectedSession.agentId}/${selectedSession.deviceId}`));
+          setSelectedSession(null);
+      }
   };
 
   if (loading) {
@@ -233,18 +243,31 @@ const Inbox: React.FC = () => {
                          </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
-                         {/* MARK AS READ BUTTON */}
-                         {selectedSession.isRead === false && (
-                             <button 
-                                onClick={handleMarkAsRead}
-                                className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md animate-pulse"
+                         <div className="flex gap-2">
+                             {/* DELETE BUTTON */}
+                             <button
+                                onClick={handleDeleteChat}
+                                className="flex items-center gap-1.5 bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md"
+                                title="Hapus Chat & Reset User"
                              >
                                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                                  </svg>
-                                 Tandai Dibaca
                              </button>
-                         )}
+
+                             {/* MARK AS READ BUTTON */}
+                             {selectedSession.isRead === false && (
+                                 <button 
+                                    onClick={handleMarkAsRead}
+                                    className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-md animate-pulse"
+                                 >
+                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                     </svg>
+                                     Tandai Dibaca
+                                 </button>
+                             )}
+                         </div>
                          <div className="text-xs text-slate-500 uppercase tracking-widest mt-1">Berbicara Dengan</div>
                          <div className="text-sm font-bold text-blue-400">{selectedSession.agentName}</div>
                     </div>
