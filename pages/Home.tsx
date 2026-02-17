@@ -1,30 +1,49 @@
 
 import React, { useEffect, useState } from 'react';
 import { db } from '../services/firebase';
-import { ref, onValue } from 'firebase/database';
-import { Agent } from '../types';
+import { ref, onValue, get, child } from 'firebase/database';
+import { Agent, AppSettings } from '../types';
 import { Link } from 'react-router-dom';
+import PublicChat from './PublicChat';
 
 const Home: React.FC = () => {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [defaultAgentId, setDefaultAgentId] = useState<string | null>(null);
 
   useEffect(() => {
-    const agentsRef = ref(db, 'agents');
-    const unsubscribe = onValue(agentsRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        const list: Agent[] = Object.keys(data)
-          .map((key) => ({ id: key, ...data[key] }))
-          .filter((agent) => agent.isPublic); // Only show Public agents
-        setAgents(list);
-      } else {
-        setAgents([]);
-      }
-      setLoading(false);
-    });
+    const fetchData = async () => {
+        try {
+            // 1. Fetch Settings to see if a default agent is set
+            const settingsRef = ref(db, 'settings');
+            const settingsSnap = await get(settingsRef);
+            const settings: AppSettings = settingsSnap.val();
+            
+            if (settings && settings.defaultAgentId) {
+                setDefaultAgentId(settings.defaultAgentId);
+                setLoading(false);
+                return; // Stop here, we will render Chat
+            }
 
-    return () => unsubscribe();
+            // 2. If no default, fetch list of public agents for Directory
+            const agentsRef = ref(db, 'agents');
+            const agentsSnap = await get(agentsRef);
+            const data = agentsSnap.val();
+            
+            if (data) {
+                const list: Agent[] = Object.keys(data)
+                .map((key) => ({ id: key, ...data[key] }))
+                .filter((agent) => agent.isPublic);
+                setAgents(list);
+            }
+        } catch (error) {
+            console.error(error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    fetchData();
   }, []);
 
   if (loading) {
@@ -35,7 +54,13 @@ const Home: React.FC = () => {
     );
   }
 
-  // Jika tidak ada agent online, tampilkan halaman kosong (atau pesan minimalis)
+  // === SCENARIO 1: DEFAULT AGENT SET ===
+  // Directly render the PublicChat component with the ID
+  if (defaultAgentId) {
+      return <PublicChat agentIdProp={defaultAgentId} />;
+  }
+
+  // === SCENARIO 2: NO DEFAULT AGENT -> SHOW DIRECTORY ===
   if (agents.length === 0) {
     return (
       <div className="min-h-screen bg-[#0f172a] flex flex-col items-center justify-center text-slate-500 p-4">

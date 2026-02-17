@@ -31,6 +31,7 @@ export interface AppSettings {
   apiKeys: string[];
   selectedModel: GeminiModel;
   compressionQuality?: number; // 0.1 to 1.0
+  defaultAgentId?: string; // ID of the agent to show on the Home page
 }
 
 export interface ChatMessage {

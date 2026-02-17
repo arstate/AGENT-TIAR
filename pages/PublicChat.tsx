@@ -45,34 +45,55 @@ const BlobImage: React.FC<{ base64Src: string }> = ({ base64Src }) => {
     );
 };
 
-const PublicChat: React.FC = () => {
-    const { agentId } = useParams(); // Note: agentId might be a SLUG or an ID
+interface PublicChatProps {
+    agentIdProp?: string; // Optional prop if used inside Home
+}
+
+const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
+    const params = useParams();
+    // Prioritize prop (from Home), then param (from Router)
+    const effectiveAgentId = agentIdProp || params.agentId;
+    
     const [agent, setAgent] = useState<Agent | null>(null);
     const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState('');
     const [chatFiles, setChatFiles] = useState<File[]>([]);
     const [isTyping, setIsTyping] = useState(false);
-    const [sessionId, setSessionId] = useState<string | null>(null);
+    
+    // Device ID (Persistent Session)
+    const [deviceId, setDeviceId] = useState<string | null>(null);
+    
     const bottomRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [loadingAgent, setLoadingAgent] = useState(true);
 
+    // Initialize Device ID
+    useEffect(() => {
+        let storedId = localStorage.getItem('device_uuid');
+        if (!storedId) {
+            storedId = `dev_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            localStorage.setItem('device_uuid', storedId);
+        }
+        setDeviceId(storedId);
+    }, []);
+
     // Load Agent Data (Handle ID or Slug)
     useEffect(() => {
-        if (!agentId) return;
+        if (!effectiveAgentId) return;
 
         const findAgent = async () => {
             setLoadingAgent(true);
             try {
                 // 1. Try to fetch as direct ID first
-                const agentRef = ref(db, `agents/${agentId}`);
+                const agentRef = ref(db, `agents/${effectiveAgentId}`);
                 const snap = await get(agentRef);
                 
                 if (snap.exists()) {
                     const data = snap.val();
-                    if (data.isPublic) {
-                        setAgent({ id: agentId, ...data });
+                    // If accessed via Prop (Home), we trust it. If via URL, check public flag.
+                    if (data.isPublic || agentIdProp) {
+                        setAgent({ id: effectiveAgentId, ...data });
                         setLoadingAgent(false);
                         return; // Found by ID
                     }
@@ -84,7 +105,7 @@ const PublicChat: React.FC = () => {
                 if (allSnap.exists()) {
                     const allData = allSnap.val();
                     const foundKey = Object.keys(allData).find(key => {
-                        return allData[key].slug === agentId && allData[key].isPublic;
+                        return allData[key].slug === effectiveAgentId && allData[key].isPublic;
                     });
 
                     if (foundKey) {
@@ -102,7 +123,7 @@ const PublicChat: React.FC = () => {
         };
 
         findAgent();
-    }, [agentId]);
+    }, [effectiveAgentId, agentIdProp]);
 
     // Load Knowledge (Requires resolved Agent ID)
     useEffect(() => {
@@ -117,24 +138,14 @@ const PublicChat: React.FC = () => {
         });
     }, [agent]);
 
-    // Session Management (LocalStorage)
+    // Load Messages based on Device ID
+    // Path: public_chats / {agentId} / {deviceId} / messages
     useEffect(() => {
-        if (!agent) return;
-        // Use agent.id (Firebase Key) for session storage, not the slug
-        let sid = localStorage.getItem(`chat_session_${agent.id}`);
-        if (!sid) {
-            sid = `public_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            localStorage.setItem(`chat_session_${agent.id}`, sid);
-            const sessionRef = ref(db, `chats/${agent.id}/${sid}`);
-            set(sessionRef, { name: "Guest User", createdAt: serverTimestamp(), type: 'public' });
-        }
-        setSessionId(sid);
-    }, [agent]);
-
-    // Load Messages
-    useEffect(() => {
-        if (!agent || !sessionId) return;
-        const messagesRef = ref(db, `chats/${agent.id}/${sessionId}/messages`);
+        if (!agent || !deviceId) return;
+        
+        const chatPath = `public_chats/${agent.id}/${deviceId}/messages`;
+        const messagesRef = ref(db, chatPath);
+        
         const unsub = onValue(messagesRef, (snap) => {
             const data = snap.val();
             if (data) {
@@ -145,18 +156,21 @@ const PublicChat: React.FC = () => {
             }
         });
         return () => unsub();
-    }, [agent, sessionId]);
+    }, [agent, deviceId]);
 
     useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isTyping]);
 
     const handleSend = async () => {
-        if ((!input.trim() && chatFiles.length === 0) || !agent || !sessionId) return;
+        if ((!input.trim() && chatFiles.length === 0) || !agent || !deviceId) return;
 
         const userMsgText = input;
         const rawFiles = [...chatFiles];
         setInput('');
         setChatFiles([]);
         setIsTyping(true);
+
+        // Path for this device's chat
+        const chatPath = `public_chats/${agent.id}/${deviceId}/messages`;
 
         let base64Images: string[] | undefined;
         let filesForGemini: File[] = [];
@@ -170,18 +184,29 @@ const PublicChat: React.FC = () => {
             base64Images = await Promise.all(imgPromises);
         }
 
-        await push(ref(db, `chats/${agent.id}/${sessionId}/messages`), {
+        await push(ref(db, chatPath), {
             role: 'user',
             text: userMsgText,
             images: base64Images || null,
             timestamp: serverTimestamp()
         });
 
+        // Ensure parent node exists with metadata if it's new
+        const chatMetaRef = ref(db, `public_chats/${agent.id}/${deviceId}`);
+        const metaSnap = await get(chatMetaRef);
+        if (!metaSnap.exists()) {
+             await set(chatMetaRef, {
+                 createdAt: serverTimestamp(),
+                 lastActive: serverTimestamp(),
+                 deviceType: 'web'
+             });
+        }
+
         const settingsSnap = await get(child(ref(db), 'settings'));
         const settings: AppSettings = settingsSnap.val();
 
         if (!settings || !settings.apiKeys) {
-             await push(ref(db, `chats/${agent.id}/${sessionId}/messages`), {
+             await push(ref(db, chatPath), {
                 role: 'model', text: "System Error: Service unavailable.", timestamp: serverTimestamp()
             });
             setIsTyping(false);
@@ -241,7 +266,7 @@ const PublicChat: React.FC = () => {
             }
             responseText = responseText.replace(sendImageRegex, '').trim();
 
-            await push(ref(db, `chats/${agent.id}/${sessionId}/messages`), {
+            await push(ref(db, chatPath), {
                 role: 'model',
                 text: responseText,
                 images: modelImagesToSend.length > 0 ? modelImagesToSend : null,
@@ -249,7 +274,7 @@ const PublicChat: React.FC = () => {
             });
         } catch (e) {
             console.error(e);
-             await push(ref(db, `chats/${agent.id}/${sessionId}/messages`), {
+             await push(ref(db, chatPath), {
                 role: 'model', text: "Sorry, I am having trouble connecting right now.", timestamp: serverTimestamp()
             });
         } finally {

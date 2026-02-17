@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { GeminiModel, AppSettings } from '../types';
+import { GeminiModel, AppSettings, Agent } from '../types';
 import { db } from '../services/firebase';
 import { ref, onValue, set } from 'firebase/database';
 
@@ -9,31 +9,45 @@ const Settings: React.FC = () => {
   const [newKey, setNewKey] = useState('');
   const [selectedModel, setSelectedModel] = useState<GeminiModel>(GeminiModel.FLASH_3);
   const [compressionQuality, setCompressionQuality] = useState<number>(0.7); // Default 70%
+  const [defaultAgentId, setDefaultAgentId] = useState<string>(''); // Default Home Agent
+  
+  const [agents, setAgents] = useState<Agent[]>([]);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     // Listen to settings from Firebase
     const settingsRef = ref(db, 'settings');
-    const unsubscribe = onValue(settingsRef, (snapshot) => {
+    const settingsUnsub = onValue(settingsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
         setKeys(data.apiKeys || []);
         setSelectedModel(data.selectedModel || GeminiModel.FLASH_3);
-        // Default to 0.7 if not set
         setCompressionQuality(data.compressionQuality !== undefined ? data.compressionQuality : 0.7);
+        setDefaultAgentId(data.defaultAgentId || '');
       }
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    // Load agents for the dropdown
+    const agentsRef = ref(db, 'agents');
+    const agentsUnsub = onValue(agentsRef, (snap) => {
+        const data = snap.val();
+        if (data) {
+            const list = Object.keys(data).map(k => ({ id: k, ...data[k] }));
+            setAgents(list);
+        }
+    });
+
+    return () => { settingsUnsub(); agentsUnsub(); };
   }, []);
 
   const handleSave = async () => {
     const settings: AppSettings = {
       apiKeys: keys,
       selectedModel: selectedModel,
-      compressionQuality: compressionQuality
+      compressionQuality: compressionQuality,
+      defaultAgentId: defaultAgentId
     };
     
     // Save to Firebase
@@ -148,34 +162,48 @@ const Settings: React.FC = () => {
               <svg className="w-6 h-6 mr-2 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
               </svg>
-              AI Model Version
+              AI Configuration
             </h3>
-            <div className="space-y-3">
-              {[
-                { id: GeminiModel.FLASH_3, label: 'Gemini 3 Flash', desc: 'Fastest, low latency' },
-                { id: GeminiModel.FLASH_2_5, label: 'Gemini 2.5 Flash', desc: 'Balanced performance' },
-                { id: GeminiModel.PRO_3, label: 'Gemini 3 Pro', desc: 'Complex reasoning' },
-              ].map((model) => (
-                <button
-                  key={model.id}
-                  onClick={() => setSelectedModel(model.id)}
-                  className={`w-full text-left p-3 rounded-lg border transition-all ${
-                    selectedModel === model.id
-                      ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500'
-                      : 'bg-slate-900 border-slate-700 hover:bg-slate-700'
-                  }`}
-                >
-                  <div className="flex justify-between items-center mb-1">
-                      <div className="font-semibold text-white text-sm">{model.label}</div>
-                      {selectedModel === model.id && (
-                        <svg className="w-5 h-5 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                        </svg>
-                      )}
-                  </div>
-                  <div className="text-xs text-slate-400">{model.desc}</div>
-                </button>
-              ))}
+            
+            <div className="space-y-4">
+                <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">Default Home Agent</label>
+                    <select 
+                        value={defaultAgentId} 
+                        onChange={(e) => setDefaultAgentId(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
+                        <option value="">-- Show Agent Directory --</option>
+                        {agents.map(a => (
+                            <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-slate-500 mt-1">If selected, the home page will directly show this agent's chat interface.</p>
+                </div>
+
+                <div>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">Model Version</label>
+                    <div className="space-y-2">
+                    {[
+                        { id: GeminiModel.FLASH_3, label: 'Gemini 3 Flash', desc: 'Fastest' },
+                        { id: GeminiModel.FLASH_2_5, label: 'Gemini 2.5 Flash', desc: 'Balanced' },
+                        { id: GeminiModel.PRO_3, label: 'Gemini 3 Pro', desc: 'Complex' },
+                    ].map((model) => (
+                        <button
+                        key={model.id}
+                        onClick={() => setSelectedModel(model.id)}
+                        className={`w-full text-left p-2 rounded-lg border transition-all flex justify-between items-center ${
+                            selectedModel === model.id
+                            ? 'bg-blue-600/20 border-blue-500 ring-1 ring-blue-500'
+                            : 'bg-slate-900 border-slate-700 hover:bg-slate-700'
+                        }`}
+                        >
+                            <span className="text-sm font-semibold text-white">{model.label}</span>
+                            {selectedModel === model.id && <div className="w-2 h-2 bg-blue-500 rounded-full"></div>}
+                        </button>
+                    ))}
+                    </div>
+                </div>
             </div>
           </div>
 
