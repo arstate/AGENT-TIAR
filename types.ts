@@ -11,6 +11,7 @@ export interface Agent {
   role: string;
   personality: string;
   avatar: string;
+  isPublic?: boolean; // New: Determines if agent is accessible via public link
 }
 
 export interface KnowledgeItem {
