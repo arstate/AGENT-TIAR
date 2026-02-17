@@ -31,16 +31,13 @@ const compressImage = async (file: File): Promise<File> => {
     });
 };
 
-const BlobImage: React.FC<{ base64Src: string }> = ({ base64Src }) => {
+const BlobImage: React.FC<{ base64Src: string; onClick?: (src: string) => void }> = ({ base64Src, onClick }) => {
     return (
         <img 
             src={base64Src} 
             alt="attachment" 
-            className="max-w-full h-auto rounded-lg max-h-60 border border-black/20 cursor-pointer"
-            onClick={() => {
-                const w = window.open("");
-                w?.document.write(`<img src="${base64Src}" style="max-width:100%"/>`);
-            }}
+            className="max-w-full h-auto rounded-lg max-h-60 border border-black/20 cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={() => onClick && onClick(base64Src)}
         />
     );
 };
@@ -69,6 +66,9 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
     const [regName, setRegName] = useState('');
     const [regPhone, setRegPhone] = useState('');
     const [checkingReg, setCheckingReg] = useState(true);
+
+    // Image Preview State
+    const [previewImage, setPreviewImage] = useState<string | null>(null);
 
     const bottomRef = useRef<HTMLDivElement>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -275,12 +275,17 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
 
         const gemini = new GeminiService(settings.apiKeys);
 
-        // TRANSLATED SYSTEM INSTRUCTION
+        // TRANSLATED SYSTEM INSTRUCTION WITH CLEAN TEXT REQUEST
         const systemInstruction = `
             Anda adalah Agen AI dengan peran berikut: ${agent.role}.
             ${agent.personality ? `Kepribadian Anda adalah: ${agent.personality}` : ''}
             
-            Gunakan BAHASA INDONESIA yang baik, sopan, dan profesional dalam setiap jawaban.
+            Gunakan BAHASA INDONESIA yang santai, sopan, dan manusiawi (seperti chat WhatsApp).
+            JANGAN gunakan format Markdown sama sekali. 
+            - JANGAN gunakan tanda ** (bintang ganda) untuk tebal.
+            - JANGAN gunakan tanda * (bintang satu) untuk miring.
+            - JANGAN gunakan tanda # untuk judul.
+            - Gunakan teks biasa (plain text) sepenuhnya.
             
             Anda memiliki akses ke Basis Pengetahuan (Knowledge Base) di bawah ini. 
             Ini berisi fakta tekstual dan daftar GAMBAR TERSEDIA dengan ID.
@@ -340,6 +345,17 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
         } finally {
             setIsTyping(false);
         }
+    };
+
+    // Helper to remove Markdown if AI ignores instruction
+    const formatMessageText = (text: string) => {
+        if (!text) return '';
+        return text
+            .replace(/\*\*/g, '')       // Remove bold markers
+            .replace(/__/g, '')         // Remove underline markers
+            .replace(/^\s*#+\s*/gm, '') // Remove headers
+            .replace(/`/g, '')          // Remove code ticks
+            .replace(/^\s*[\*\-]\s+/gm, '• '); // Convert list bullets
     };
 
     if (loadingAgent || checkingReg) {
@@ -449,10 +465,16 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
                         <div className={`max-w-[85%] rounded-2xl px-5 py-3 shadow-lg text-sm whitespace-pre-wrap ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-slate-800 text-slate-200 border border-slate-700 rounded-tl-none'}`}>
                             {msg.images && msg.images.length > 0 && (
                                 <div className="mb-2 flex flex-wrap gap-2">
-                                    {msg.images.map((img, idx) => <BlobImage key={idx} base64Src={img} />)}
+                                    {msg.images.map((img, idx) => (
+                                        <BlobImage 
+                                            key={idx} 
+                                            base64Src={img} 
+                                            onClick={(src) => setPreviewImage(src)} 
+                                        />
+                                    ))}
                                 </div>
                             )}
-                            {msg.text}
+                            {formatMessageText(msg.text)}
                             <div className={`text-[10px] text-right mt-1 opacity-60 ${msg.role === 'user' ? 'text-blue-200' : 'text-slate-400'}`}>
                                 {msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '...'}
                             </div>
@@ -504,6 +526,29 @@ const PublicChat: React.FC<PublicChatProps> = ({ agentIdProp }) => {
                     </button>
                 </div>
             </div>
+
+            {/* Image Preview Modal */}
+            {previewImage && (
+                <div 
+                    className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in" 
+                    onClick={() => setPreviewImage(null)}
+                >
+                    <button 
+                        className="absolute top-4 right-4 bg-slate-800/80 hover:bg-slate-700 text-white p-2 rounded-full transition-colors z-50 border border-slate-600"
+                        onClick={() => setPreviewImage(null)}
+                    >
+                         <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                    <img 
+                        src={previewImage} 
+                        alt="Full Preview" 
+                        className="max-w-full max-h-[90vh] rounded-lg shadow-2xl object-contain animate-scale-in" 
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                </div>
+            )}
         </div>
     );
 };

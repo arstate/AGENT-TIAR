@@ -145,6 +145,17 @@ const Inbox: React.FC = () => {
       }
   };
 
+  // Helper to remove Markdown
+  const formatMessageText = (text: string) => {
+      if (!text) return '';
+      return text
+          .replace(/\*\*/g, '')       // Remove bold markers
+          .replace(/__/g, '')         // Remove underline markers
+          .replace(/^\s*#+\s*/gm, '') // Remove headers
+          .replace(/`/g, '')          // Remove code ticks
+          .replace(/^\s*[\*\-]\s+/gm, '• '); // Convert list bullets
+  };
+
   if (loading) {
       return <div className="p-8 text-center text-slate-400">Memuat kotak masuk...</div>;
   }
@@ -286,7 +297,7 @@ const Inbox: React.FC = () => {
                                             {msg.images.map((img, idx) => <BlobImage key={idx} base64Src={img} />)}
                                         </div>
                                     )}
-                                    {msg.text}
+                                    {formatMessageText(msg.text)}
                                     <div className="text-[10px] text-right mt-1 opacity-50">
                                         {new Date(msg.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                                     </div>
