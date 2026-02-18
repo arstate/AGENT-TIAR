@@ -85,7 +85,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       </aside>
 
       {/* Mobile Header */}
-      <div className="md:hidden fixed top-0 left-0 right-0 bg-slate-800/90 backdrop-blur-md p-4 z-50 flex justify-between items-center border-b border-slate-700">
+      <div className="md:hidden fixed top-0 left-0 right-0 bg-slate-800/90 backdrop-blur-md p-4 z-50 flex justify-between items-center border-b border-slate-700 h-20">
           <div className="flex items-center gap-2">
              <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shadow-lg">
                  <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -113,7 +113,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       </div>
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto md:p-0 p-4 md:pt-24 bg-slate-900">
+      <main className="flex-1 overflow-auto md:p-0 p-4 pt-24 md:pt-0 bg-slate-900">
         <div className="max-w-7xl mx-auto md:p-6">
           {children}
         </div>
