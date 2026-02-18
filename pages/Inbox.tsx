@@ -19,17 +19,14 @@ interface UserSession {
   messages: ChatMessage[];
 }
 
-// Helper for image display (simplified read-only)
-const BlobImage: React.FC<{ base64Src: string }> = ({ base64Src }) => {
+// Helper for image display (Updated to support onClick handler for modal)
+const BlobImage: React.FC<{ base64Src: string; onClick?: (src: string) => void }> = ({ base64Src, onClick }) => {
     return (
         <img 
             src={base64Src} 
             alt="attachment" 
-            className="max-w-full h-auto rounded-lg max-h-48 border border-black/20 cursor-pointer"
-            onClick={() => {
-                const w = window.open("");
-                w?.document.write(`<img src="${base64Src}" style="max-width:100%"/>`);
-            }}
+            className="max-w-full h-auto rounded-lg max-h-48 border border-black/20 cursor-pointer hover:opacity-90 transition-opacity"
+            onClick={() => onClick && onClick(base64Src)}
         />
     );
 };
@@ -39,6 +36,10 @@ const Inbox: React.FC = () => {
   const [selectedSession, setSelectedSession] = useState<UserSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [agentsMap, setAgentsMap] = useState<Record<string, Agent>>({});
+  
+  // Image Preview State
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  
   const bottomRef = useRef<HTMLDivElement>(null);
 
   // 1. Load Agents to map IDs to Names/Avatars
@@ -111,11 +112,13 @@ const Inbox: React.FC = () => {
     return () => unsub();
   }, [agentsMap, selectedSession]); // Dependency on selectedSession needed to keep chat live
 
+  // FIX: Only scroll when Session ID changes OR Message count increases
+  // This prevents scrolling when metadata (like lastActive) updates
   useEffect(() => {
       if (selectedSession) {
           bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
       }
-  }, [selectedSession]);
+  }, [selectedSession?.key, selectedSession?.messages.length]);
 
   const handleWhatsAppClick = (phone: string, name: string) => {
       // Clean phone number: replace 08 with 628, remove non-digits
@@ -294,7 +297,13 @@ const Inbox: React.FC = () => {
                                 <div className={`max-w-[85%] rounded-2xl px-5 py-3 shadow-sm text-sm whitespace-pre-wrap ${msg.role === 'user' ? 'bg-[#005c4b] text-white rounded-tr-none' : 'bg-slate-700 text-slate-200 rounded-tl-none'}`}>
                                     {msg.images && msg.images.length > 0 && (
                                         <div className="mb-2 flex flex-wrap gap-2">
-                                            {msg.images.map((img, idx) => <BlobImage key={idx} base64Src={img} />)}
+                                            {msg.images.map((img, idx) => (
+                                                <BlobImage 
+                                                    key={idx} 
+                                                    base64Src={img} 
+                                                    onClick={(src) => setPreviewImage(src)} 
+                                                />
+                                            ))}
                                         </div>
                                     )}
                                     {formatMessageText(msg.text)}
@@ -310,6 +319,29 @@ const Inbox: React.FC = () => {
              </>
          )}
       </div>
+
+       {/* Image Preview Modal */}
+       {previewImage && (
+            <div 
+                className="fixed inset-0 z-[100] bg-black/95 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in" 
+                onClick={() => setPreviewImage(null)}
+            >
+                <button 
+                    className="absolute top-4 right-4 bg-slate-800/80 hover:bg-slate-700 text-white p-2 rounded-full transition-colors z-50 border border-slate-600"
+                    onClick={() => setPreviewImage(null)}
+                >
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+                <img 
+                    src={previewImage} 
+                    alt="Full Preview" 
+                    className="max-w-full max-h-[90vh] rounded-lg shadow-2xl object-contain animate-scale-in" 
+                    onClick={(e) => e.stopPropagation()}
+                />
+            </div>
+        )}
     </div>
   );
 };
